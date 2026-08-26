@@ -1,0 +1,72 @@
+{% extends "admin/base_admin.html" %}
+{% block title %}Buat Periode Baru{% endblock %}
+{% block content %}
+<a href="{{ url_for('admin.periode_list') }}" class="text-sm text-stone-500 hover:text-brand-600">← Kembali ke Periode Magang</a>
+<h1 class="text-2xl font-bold text-stone-800 mt-2 mb-1">Buat Periode Magang Baru</h1>
+<p class="text-stone-500 text-sm mb-6">
+  Isi detail periode, pilih template sertifikat yang dipakai, lalu unggah data peserta sekaligus —
+  semuanya diproses dalam satu langkah.
+</p>
+
+<form method="post" enctype="multipart/form-data" class="bg-white rounded-xl border border-stone-200 p-6 space-y-6 max-w-2xl">
+
+  <div>
+    <label class="block text-sm font-medium text-stone-700 mb-1.5">Nama Periode</label>
+    <input type="text" name="nama_periode" required placeholder="mis. Agustus 2026"
+           class="w-full rounded-lg border border-stone-300 px-3 py-2.5 focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none">
+  </div>
+
+  <div class="grid grid-cols-2 gap-4">
+    <div>
+      <label class="block text-sm font-medium text-stone-700 mb-1.5">Tanggal Mulai</label>
+      <input type="text" id="tanggal_mulai" name="tanggal_mulai" placeholder="Pilih tanggal" autocomplete="off"
+             class="w-full rounded-lg border border-stone-300 px-3 py-2.5 focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none">
+    </div>
+    <div>
+      <label class="block text-sm font-medium text-stone-700 mb-1.5">Tanggal Selesai</label>
+      <input type="text" id="tanggal_selesai" name="tanggal_selesai" placeholder="Pilih tanggal" autocomplete="off"
+             class="w-full rounded-lg border border-stone-300 px-3 py-2.5 focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none">
+    </div>
+  </div>
+
+  <div>
+    <label class="block text-sm font-medium text-stone-700 mb-1.5">Template Sertifikat</label>
+    <select name="template_id"
+            class="w-full rounded-lg border border-stone-300 px-3 py-2.5 focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none">
+      <option value="">— Pilih template —</option>
+      {% for t in template_list %}
+      <option value="{{ t.id }}">{{ t.nama_template }}</option>
+      {% endfor %}
+    </select>
+    {% if not template_list %}
+    <p class="text-xs text-amber-600 mt-1.5">
+      Belum ada template sertifikat aktif.
+      <a href="{{ url_for('admin.template_baru') }}" class="underline">Unggah template dulu di sini</a>,
+      atau lanjutkan dan pilih template belakangan lewat halaman detail periode.
+    </p>
+    {% endif %}
+  </div>
+
+  <div class="border-t border-stone-100 pt-5">
+    <label class="block text-sm font-medium text-stone-700 mb-1.5">Unggah Data Peserta (Excel)</label>
+    <p class="text-xs text-stone-400 mb-2">
+      Kolom yang dibutuhkan: Nama, NIM, Fakultas, Universitas, Email, No. WA.
+      <a href="{{ url_for('admin.unduh_contoh_excel') }}" class="text-brand-600 underline">Unduh contoh file</a>.
+      Boleh dikosongkan dan diunggah belakangan dari halaman detail periode.
+    </p>
+    <input type="file" name="file_excel" accept=".xlsx"
+           class="w-full text-sm border border-stone-300 rounded-lg file:mr-4 file:py-2.5 file:px-4 file:border-0 file:bg-brand-50 file:text-brand-700 file:font-medium hover:file:bg-brand-100">
+  </div>
+
+  <div class="pt-2">
+    <button type="submit" class="bg-brand-600 hover:bg-brand-700 text-white font-medium px-6 py-2.5 rounded-lg transition">
+      Simpan Periode &amp; Proses Data Peserta
+    </button>
+  </div>
+</form>
+
+<script>
+  flatpickr("#tanggal_mulai", { dateFormat: "Y-m-d", locale: "id" });
+  flatpickr("#tanggal_selesai", { dateFormat: "Y-m-d", locale: "id" });
+</script>
+{% endblock %}

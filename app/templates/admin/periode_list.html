@@ -1,0 +1,60 @@
+{% extends "admin/base_admin.html" %}
+{% block title %}Periode Magang{% endblock %}
+{% block content %}
+<div class="flex items-center justify-between mb-6">
+  <div>
+    <h1 class="text-2xl font-bold text-stone-800">Periode Magang</h1>
+    <p class="text-stone-500 text-sm mt-1">Kelola batch/periode magang & data peserta di masing-masing periode.</p>
+  </div>
+  <a href="{{ url_for('admin.periode_baru') }}"
+     class="bg-brand-600 hover:bg-brand-700 text-white text-sm font-medium px-4 py-2.5 rounded-lg transition shrink-0">
+    + Buat Periode Baru
+  </a>
+</div>
+
+<div class="grid gap-4">
+  {% for r in ringkasan %}
+  <a href="{{ url_for('admin.periode_detail', periode_id=r.periode.id) }}"
+     class="block bg-white rounded-xl border border-stone-200 hover:border-brand-300 hover:shadow-md transition p-5">
+    <div class="flex items-center justify-between">
+      <div>
+        <div class="flex items-center gap-2">
+          <h2 class="font-semibold text-stone-800">{{ r.periode.nama_periode }}</h2>
+          {% if r.periode.aktif %}
+            <span class="text-xs bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full font-medium">Aktif</span>
+          {% endif %}
+        </div>
+        {% if r.periode.tanggal_mulai %}
+        <p class="text-xs text-stone-400 mt-1">
+          {{ r.periode.tanggal_mulai.strftime('%d %b %Y') }}
+          {% if r.periode.tanggal_selesai %} — {{ r.periode.tanggal_selesai.strftime('%d %b %Y') }}{% endif %}
+        </p>
+        {% endif %}
+        <p class="text-xs text-stone-400 mt-0.5">
+          Template: {{ r.periode.template.nama_template if r.periode.template else '— belum dipilih' }}
+        </p>
+      </div>
+      <div class="flex items-center gap-6 text-center">
+        <div>
+          <div class="text-lg font-bold text-stone-700">{{ r.total }}</div>
+          <div class="text-[11px] text-stone-400 uppercase tracking-wide">Peserta</div>
+        </div>
+        <div>
+          <div class="text-lg font-bold text-emerald-600">{{ r.sudah }}</div>
+          <div class="text-[11px] text-stone-400 uppercase tracking-wide">Terkirim</div>
+        </div>
+        <div>
+          <div class="text-lg font-bold text-amber-600">{{ r.belum }}</div>
+          <div class="text-[11px] text-stone-400 uppercase tracking-wide">Belum</div>
+        </div>
+        <span class="text-stone-300">→</span>
+      </div>
+    </div>
+  </a>
+  {% else %}
+  <div class="bg-white rounded-xl border border-dashed border-stone-300 p-10 text-center text-stone-400">
+    Belum ada periode magang. Klik "+ Buat Periode Baru" untuk mulai.
+  </div>
+  {% endfor %}
+</div>
+{% endblock %}

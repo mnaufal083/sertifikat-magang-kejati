@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block title %}Dashboard Admin{% endblock %}
+{% block content %}
+<div class="card">
+  <h1>Dashboard Admin</h1>
+  <p class="muted">Kelola periode/batch magang dan pantau status sertifikat tiap peserta.</p>
+
+  <form method="post" action="{{ url_for('admin.periode_baru') }}" style="display:flex; gap:10px; align-items:flex-end; margin-top:16px;">
+    <div style="flex:1;">
+      <label for="nama_periode">Buat Periode Baru</label>
+      <input type="text" id="nama_periode" name="nama_periode" placeholder="mis. Januari 2027" required style="margin-bottom:0;">
+    </div>
+    <button type="submit" class="btn">+ Buat Periode</button>
+  </form>
+</div>
+
+{% for r in ringkasan %}
+<div class="card">
+  <h2 style="border:none; margin-bottom:4px;">
+    {{ r.periode.nama_periode }}
+    {% if r.periode.aktif %}<span class="badge ok">Aktif</span>{% endif %}
+  </h2>
+  <div class="stat-grid">
+    <div class="stat-box"><div class="num">{{ r.total }}</div><div class="label">Total Peserta</div></div>
+    <div class="stat-box"><div class="num">{{ r.terverifikasi }}</div><div class="label">Terverifikasi</div></div>
+    <div class="stat-box"><div class="num">{{ r.terunduh }}</div><div class="label">Sudah Unduh Sertifikat</div></div>
+  </div>
+  <a class="btn small" style="margin-top:14px;" href="{{ url_for('admin.periode_detail', periode_id=r.periode.id) }}">Kelola Peserta →</a>
+</div>
+{% else %}
+<div class="card center muted">Belum ada periode. Buat periode baru di atas, atau jalankan <code>python scripts/seed.py</code> untuk data contoh.</div>
+{% endfor %}
+{% endblock %}

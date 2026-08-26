@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block title %}Sudah Diunduh{% endblock %}
+{% block content %}
+<div class="wrap-narrow">
+  <div class="card center">
+    <div class="badge warn" style="margin-bottom:14px;">Sudah Pernah Diunduh</div>
+    <h1>Sertifikat Sudah Diunduh Sebelumnya</h1>
+    <p class="muted">
+      Tautan personal atas nama <strong>{{ peserta.nama }}</strong> sudah pernah digunakan
+      untuk mengunduh sertifikat. Setiap tautan hanya berlaku satu kali unduhan untuk
+      menjaga keamanan dokumen resmi ini.
+    </p>
+    <p class="muted">
+      Jika Anda kehilangan file sertifikat yang sudah diunduh, silakan hubungi Bidang
+      Pembinaan Kejaksaan Tinggi Jawa Tengah untuk meminta tautan baru.
+    </p>
+  </div>
+</div>
+{% endblock %}

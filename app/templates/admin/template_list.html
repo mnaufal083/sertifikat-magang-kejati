@@ -1,0 +1,42 @@
+{% extends "admin/base_admin.html" %}
+{% block title %}Template Sertifikat{% endblock %}
+{% block content %}
+<div class="flex items-center justify-between mb-6">
+  <div>
+    <h1 class="text-2xl font-bold text-stone-800">Template Sertifikat</h1>
+    <p class="text-stone-500 text-sm mt-1">Desain sertifikat yang dipakai untuk generate otomatis. Bisa lebih dari satu, dipilih per periode.</p>
+  </div>
+  <a href="{{ url_for('admin.template_baru') }}"
+     class="bg-brand-600 hover:bg-brand-700 text-white text-sm font-medium px-4 py-2.5 rounded-lg transition shrink-0">
+    + Unggah Template Baru
+  </a>
+</div>
+
+<div class="grid grid-cols-3 gap-5">
+  {% for t in templates %}
+  <div class="bg-white rounded-xl border border-stone-200 overflow-hidden {{ '' if t.aktif else 'opacity-50' }}">
+    <div class="aspect-[1.41/1] bg-stone-100">
+      <img src="{{ url_for('admin.template_preview_image', template_id=t.id) }}" class="w-full h-full object-cover" alt="{{ t.nama_template }}">
+    </div>
+    <div class="p-4">
+      <div class="font-medium text-stone-800 text-sm">{{ t.nama_template }}</div>
+      <div class="text-xs text-stone-400 mt-0.5">
+        {{ 'Aktif' if t.aktif else 'Nonaktif' }} · diunggah {{ t.dibuat_at.strftime('%d %b %Y') }}
+      </div>
+      <div class="flex gap-3 mt-3">
+        <a href="{{ url_for('admin.template_kalibrasi', template_id=t.id) }}" class="text-xs text-brand-600 hover:underline font-medium">Kalibrasi Posisi</a>
+        <form method="post" action="{{ url_for('admin.template_nonaktifkan', template_id=t.id) }}">
+          <button type="submit" class="text-xs text-stone-500 hover:text-rose-600 underline">
+            {{ 'Nonaktifkan' if t.aktif else 'Aktifkan' }}
+          </button>
+        </form>
+      </div>
+    </div>
+  </div>
+  {% else %}
+  <div class="col-span-3 bg-white rounded-xl border border-dashed border-stone-300 p-10 text-center text-stone-400">
+    Belum ada template. Klik "+ Unggah Template Baru" untuk memulai.
+  </div>
+  {% endfor %}
+</div>
+{% endblock %}

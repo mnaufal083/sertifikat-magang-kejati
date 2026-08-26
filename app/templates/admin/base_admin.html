@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}Admin{% endblock %} — Sertifikat Magang Kejati Jateng</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/tailwind.css') }}">
+  <script src="{{ url_for('static', filename='js/alpine.min.js') }}" defer></script>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/flatpickr.min.css') }}">
+  <script src="{{ url_for('static', filename='js/flatpickr.min.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/flatpickr-id.js') }}"></script>
+  <style>
+    [x-cloak] { display: none !important; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+  </style>
+</head>
+<body class="bg-stone-50 text-stone-800">
+<div class="flex min-h-screen">
+  <!-- Sidebar -->
+  <aside class="w-64 bg-brand-900 text-white flex flex-col shrink-0">
+    <div class="px-6 py-6 border-b border-white/10">
+      <div class="flex items-center gap-2">
+        <span class="text-xl">⚖</span>
+        <div>
+          <div class="font-bold text-sm leading-tight">Admin Kejati</div>
+          <div class="text-xs text-brand-200">Jawa Tengah</div>
+        </div>
+      </div>
+    </div>
+    <nav class="flex-1 px-3 py-4 space-y-1 text-sm">
+      <a href="{{ url_for('admin.periode_list') }}"
+         class="flex items-center gap-3 px-3 py-2.5 rounded-lg {{ 'bg-brand-700 text-white' if request.endpoint and request.endpoint.startswith('admin.periode') else 'text-brand-200 hover:bg-brand-800 hover:text-white' }}">
+        <span>🗂</span> Periode Magang
+      </a>
+      <a href="{{ url_for('admin.template_list') }}"
+         class="flex items-center gap-3 px-3 py-2.5 rounded-lg {{ 'bg-brand-700 text-white' if request.endpoint and request.endpoint.startswith('admin.template') else 'text-brand-200 hover:bg-brand-800 hover:text-white' }}">
+        <span>🎨</span> Template Sertifikat
+      </a>
+    </nav>
+    <div class="px-3 py-4 border-t border-white/10">
+      <a href="{{ url_for('public.cek_sertifikat') }}" class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-brand-200 hover:bg-brand-800 hover:text-white text-sm">
+        <span>🔍</span> Cek Keaslian Sertifikat
+      </a>
+      <a href="{{ url_for('admin.logout') }}" class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-brand-200 hover:bg-brand-800 hover:text-white text-sm">
+        <span>🚪</span> Keluar
+      </a>
+    </div>
+  </aside>
+
+  <!-- Content -->
+  <main class="flex-1 min-w-0">
+    <div class="max-w-6xl mx-auto px-6 py-8">
+      {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+          <div class="mb-6 space-y-2">
+          {% for category, message in messages %}
+            <div class="rounded-lg px-4 py-3 text-sm {{ 'bg-emerald-50 text-emerald-700 border border-emerald-200' if category=='success' else 'bg-rose-50 text-rose-700 border border-rose-200' }}">
+              {{ message }}
+            </div>
+          {% endfor %}
+          </div>
+        {% endif %}
+      {% endwith %}
+      {% block content %}{% endblock %}
+    </div>
+  </main>
+</div>
+</body>
+</html>

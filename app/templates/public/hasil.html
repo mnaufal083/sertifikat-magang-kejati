@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block title %}Sertifikat Siap Diunduh{% endblock %}
+{% block content %}
+<div class="wrap-narrow">
+  <div class="card">
+    <div class="badge ok" style="margin-bottom:14px;">✓ Identitas Terverifikasi</div>
+    <h1>Sertifikat Anda Siap Diunduh</h1>
+
+    <div style="background:#f8f5ec; border:1px solid var(--line); border-radius:8px; padding:14px 18px; margin-bottom:18px;">
+      <div><strong>Nama</strong> &nbsp;: {{ peserta.nama }}</div>
+      <div><strong>NIM</strong> &nbsp;&nbsp;: {{ peserta.nim }}</div>
+      <div><strong>No. Sertifikat</strong> : {{ sertifikat.no_sertifikat }}</div>
+      <div><strong>Kode Verifikasi</strong> : {{ sertifikat.kode_verifikasi }}</div>
+    </div>
+
+    <a class="btn block" href="{{ url_for('public.unduh', token=token) }}">⬇ Unduh Sertifikat (PDF)</a>
+    <p class="muted center" style="margin-top:12px; font-size:0.82rem; color:var(--red);">
+      Tautan unduhan ini hanya bisa dipakai satu kali. Setelah diunduh, tautan personal Anda
+      otomatis tidak berlaku lagi.
+    </p>
+
+    <hr style="border: none; border-top: 1px solid var(--line); margin: 18px 0;">
+    <p class="muted" style="font-size:0.82rem;">
+      Keaslian sertifikat dapat diverifikasi kapan saja melalui kode QR pada sertifikat,
+      atau melalui halaman
+      <a href="{{ url_for('public.cek_sertifikat', kode=sertifikat.kode_verifikasi) }}">cek keaslian sertifikat</a>.
+    </p>
+  </div>
+</div>
+{% endblock %}

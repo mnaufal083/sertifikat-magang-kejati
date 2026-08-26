@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Login Admin — Sertifikat Magang Kejati Jateng</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/tailwind.css') }}">
+</head>
+<body class="bg-brand-900 min-h-screen flex items-center justify-center px-4">
+  <div class="w-full max-w-sm">
+    <div class="text-center mb-6 text-white">
+      <div class="text-3xl mb-1">⚖</div>
+      <div class="font-bold">Admin Kejaksaan Tinggi Jawa Tengah</div>
+      <div class="text-brand-200 text-sm">Sistem Sertifikat Magang</div>
+    </div>
+    <div class="bg-white rounded-2xl shadow-xl p-8">
+      {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+          {% for category, message in messages %}
+            <div class="mb-4 rounded-lg px-4 py-2.5 text-sm bg-rose-50 text-rose-700 border border-rose-200">{{ message }}</div>
+          {% endfor %}
+        {% endif %}
+      {% endwith %}
+      <form method="post" class="space-y-4">
+        <div>
+          <label class="block text-xs font-medium text-stone-500 mb-1">Username</label>
+          <input type="text" name="username" required autofocus
+                 class="w-full rounded-lg border border-stone-300 px-3 py-2.5 focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none">
+        </div>
+        <div>
+          <label class="block text-xs font-medium text-stone-500 mb-1">Password</label>
+          <input type="password" name="password" required
+                 class="w-full rounded-lg border border-stone-300 px-3 py-2.5 focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none">
+        </div>
+        <button type="submit" class="w-full bg-brand-600 hover:bg-brand-700 text-white font-medium rounded-lg py-2.5 transition">
+          Masuk
+        </button>
+      </form>
+      <p class="text-center text-xs text-stone-400 mt-4">Demo: admin / admin123</p>
+    </div>
+  </div>
+</body>
+</html>

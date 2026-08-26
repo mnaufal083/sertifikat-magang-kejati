@@ -1,0 +1,83 @@
+{% extends "admin/base_admin.html" %}
+{% block title %}Unggah Template Baru{% endblock %}
+{% block content %}
+<a href="{{ url_for('admin.template_list') }}" class="text-sm text-stone-500 hover:text-brand-600">← Kembali ke Template Sertifikat</a>
+<h1 class="text-2xl font-bold text-stone-800 mt-2 mb-1">Unggah Template Sertifikat Baru</h1>
+<p class="text-stone-500 text-sm mb-6">
+  Setelah diunggah, Anda akan diarahkan ke halaman kalibrasi untuk mengatur posisi
+  Nama, NIM, Fakultas, Universitas, nomor sertifikat, dan QR code di atas desain ini.
+</p>
+
+<div class="grid grid-cols-3 gap-6">
+  <form method="post" enctype="multipart/form-data" class="col-span-2 bg-white rounded-xl border border-stone-200 p-6 space-y-6">
+    <div>
+      <label class="block text-sm font-medium text-stone-700 mb-1.5">Nama Template</label>
+      <input type="text" name="nama_template" required placeholder="mis. Sertifikat Magang 2027"
+             class="w-full rounded-lg border border-stone-300 px-3 py-2.5 focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none">
+    </div>
+
+    <div>
+      <label class="block text-sm font-medium text-stone-700 mb-1.5">File Desain (PDF, PNG, atau JPG)</label>
+      <input type="file" name="file_desain" accept=".pdf,.png,.jpg,.jpeg" required
+             class="w-full text-sm border border-stone-300 rounded-lg file:mr-4 file:py-2.5 file:px-4 file:border-0 file:bg-brand-50 file:text-brand-700 file:font-medium hover:file:bg-brand-100">
+      <div class="mt-2.5 rounded-lg bg-stone-50 border border-stone-200 px-3.5 py-3 text-xs text-stone-500 space-y-1.5">
+        <p><strong class="text-stone-600">Ada dua cara mengatur posisi teks, boleh unggah desain dengan cara mana pun:</strong></p>
+        <p><strong class="text-stone-600">(1) Desain masih ada label placeholder</strong> — mis. tertulis
+        "Nama Mahasiswa", "NIM", "Fakultas", "Universitas" seperti template resmi Kejati.
+        Sistem akan <em>mencoba</em> mendeteksi posisinya otomatis lewat pembacaan teks (OCR) dan
+        membersihkan areanya. Cukup andal untuk label berfont biasa (NIM, Fakultas, dst.), tapi
+        sering tidak terbaca untuk font kaligrafi/miring (umum dipakai untuk placeholder nama) —
+        bagian yang tidak terdeteksi tetap bisa diatur manual di langkah berikutnya.</p>
+        <p><strong class="text-stone-600">(2) Desain sudah polos</strong> (tanpa teks nama/NIM sama
+        sekali) — deteksi otomatis tidak akan menemukan apa pun, tidak masalah, langsung atur
+        semua posisi secara manual di halaman kalibrasi (form angka + pratinjau langsung).</p>
+        <p>Disarankan resolusi tinggi (setara 300 DPI, lebar ≥ 2400px) supaya hasil cetak tajam.</p>
+      </div>
+    </div>
+
+    <div class="border-t border-stone-100 pt-5">
+      <div class="text-sm font-medium text-stone-700 mb-3">Font Kustom (opsional)</div>
+      <p class="text-xs text-stone-400 mb-3">
+        Kalau diunggah, font ini akan benar-benar dipakai menggantikan font bawaan untuk
+        field terkait pada setiap sertifikat yang digenerate — bisa diisi sebagian saja
+        (mis. hanya Font Nama), field yang dikosongkan tetap pakai font bawaan
+        (Pinyon Script untuk nama, Cardo untuk identitas).
+      </p>
+      <div class="space-y-3">
+        <div>
+          <label class="block text-xs text-stone-500 mb-1">Font Nama (.ttf/.otf)</label>
+          <p class="text-[11px] text-stone-400 mb-1">Dipakai untuk nama peserta, mis. <em>"Muhammad Naufal Nashir"</em>.</p>
+          <input type="file" name="font_nama" accept=".ttf,.otf"
+                 class="w-full text-xs border border-stone-300 rounded-lg file:mr-2 file:py-2 file:px-3 file:border-0 file:bg-stone-100 file:text-stone-600">
+        </div>
+        <div>
+          <label class="block text-xs text-stone-500 mb-1">Font Label Identitas - Bold (.ttf/.otf)</label>
+          <p class="text-[11px] text-stone-400 mb-1">Dipakai untuk tulisan tetap sebelum tanda titik dua, mis. <strong>"NIM :"</strong>, <strong>"Fakultas :"</strong> — sama untuk semua peserta.</p>
+          <input type="file" name="font_bold" accept=".ttf,.otf"
+                 class="w-full text-xs border border-stone-300 rounded-lg file:mr-2 file:py-2 file:px-3 file:border-0 file:bg-stone-100 file:text-stone-600">
+        </div>
+        <div>
+          <label class="block text-xs text-stone-500 mb-1">Font Nilai Identitas - Regular (.ttf/.otf)</label>
+          <p class="text-[11px] text-stone-400 mb-1">Dipakai untuk isian yang beda-beda tiap peserta, mis. <em>"2305110041"</em>, <em>"Ilmu Komputer"</em> — bagian setelah titik dua.</p>
+          <input type="file" name="font_reg" accept=".ttf,.otf"
+                 class="w-full text-xs border border-stone-300 rounded-lg file:mr-2 file:py-2 file:px-3 file:border-0 file:bg-stone-100 file:text-stone-600">
+        </div>
+      </div>
+    </div>
+
+    <button type="submit" class="bg-brand-600 hover:bg-brand-700 text-white font-medium px-6 py-2.5 rounded-lg transition">
+      Unggah &amp; Lanjut ke Kalibrasi →
+    </button>
+  </form>
+
+  <div class="bg-brand-50 rounded-xl border border-brand-100 p-5 h-fit">
+    <div class="font-medium text-brand-800 text-sm mb-2">Tips agar hasil HD &amp; rapi</div>
+    <ul class="text-xs text-brand-700 space-y-2 list-disc list-inside">
+      <li>Ekspor desain dari Canva/Illustrator dalam resolusi tinggi (pilih "HD" atau atur lebar ≥ 2400px).</li>
+      <li>Format PDF paling aman untuk menjaga ketajaman teks & garis vektor.</li>
+      <li>Pastikan area untuk Nama/NIM/Fakultas/Universitas benar-benar kosong di file yang diunggah.</li>
+      <li>Rasio disarankan A4 landscape (lebar : tinggi ≈ 1.41 : 1) supaya konsisten dengan sertifikat sebelumnya.</li>
+    </ul>
+  </div>
+</div>
+{% endblock %}

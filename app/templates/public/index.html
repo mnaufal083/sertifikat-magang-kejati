@@ -1,0 +1,20 @@
+{% extends "public/base_public.html" %}
+{% block title %}Beranda{% endblock %}
+{% block body %}
+<div class="min-h-screen flex items-center justify-center px-4">
+  <div class="max-w-md w-full bg-white rounded-2xl shadow-sm border border-stone-200 p-8 text-center">
+    <div class="text-3xl mb-3">⚖</div>
+    <h1 class="text-xl font-bold text-stone-800 mb-2">Sertifikat Magang</h1>
+    <p class="text-sm text-stone-500 mb-6">Kejaksaan Tinggi Jawa Tengah</p>
+    <a href="{{ url_for('public.ambil_sertifikat') }}"
+       class="block w-full bg-brand-600 hover:bg-brand-700 text-white font-medium py-3 rounded-lg transition mb-3">
+      Ambil Sertifikat Magang
+    </a>
+    <a href="{{ url_for('public.cek_sertifikat') }}"
+       class="block w-full text-brand-600 text-sm hover:underline py-2">
+      Cek Keaslian Sertifikat
+    </a>
+    <a href="{{ url_for('admin.login') }}" class="block text-xs text-stone-400 hover:underline mt-4">Masuk sebagai admin</a>
+  </div>
+</div>
+{% endblock %}

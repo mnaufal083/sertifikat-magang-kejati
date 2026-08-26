@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block title %}Verifikasi Akses{% endblock %}
+{% block content %}
+<div class="wrap-narrow">
+  <div class="card">
+    <h1>Verifikasi Akses Sertifikat</h1>
+    <p class="muted">
+      Tautan ini khusus untuk Anda. Untuk melanjutkan, konfirmasi identitas berikut
+      dengan memasukkan alamat email yang terdaftar saat pendaftaran magang.
+      Kode OTP akan dikirim ke email tersebut.
+    </p>
+
+    <div style="background:#f8f5ec; border:1px solid var(--line); border-radius:8px; padding:14px 18px; margin-bottom:18px;">
+      <div><strong>Nama</strong> &nbsp;: {{ peserta.nama }}</div>
+      <div><strong>NIM</strong> &nbsp;&nbsp;: {{ peserta.nim }}</div>
+      <div><strong>Fakultas</strong> : {{ peserta.fakultas }}</div>
+    </div>
+
+    <form method="post" action="{{ url_for('public.kirim_otp', token=token) }}">
+      <label for="email">Email terdaftar</label>
+      <input type="email" id="email" name="email" placeholder="nama@email.com" required autofocus>
+      <button type="submit" class="btn block">Kirim Kode OTP</button>
+    </form>
+
+    <p class="muted" style="margin-top:16px; font-size:0.8rem;">
+      Tautan ini bersifat sekali pakai dan akan kedaluwarsa otomatis. Jika Anda tidak
+      merasa meminta sertifikat ini, abaikan halaman ini.
+    </p>
+  </div>
+</div>
+{% endblock %}

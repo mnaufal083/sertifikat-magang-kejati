@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block title %}Log Akses{% endblock %}
+{% block content %}
+<div class="card">
+  <a href="{{ url_for('admin.dashboard') }}" class="muted" style="font-size:0.85rem;">← Kembali ke Dashboard</a>
+  <h1>Log Akses (Audit Trail)</h1>
+  <p class="muted">300 aktivitas terbaru — dipakai untuk investigasi jika ada percobaan akses mencurigakan.</p>
+</div>
+
+<div class="card">
+  <table>
+    <thead>
+      <tr>
+        <th>Waktu</th>
+        <th>Peserta</th>
+        <th>Aksi</th>
+        <th>Status</th>
+        <th>Keterangan</th>
+        <th>IP</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for log in logs %}
+      <tr>
+        <td>{{ log.waktu.strftime('%d/%m/%Y %H:%M:%S') }}</td>
+        <td>{{ log.peserta.nama if log.peserta else '-' }}</td>
+        <td>{{ log.aksi }}</td>
+        <td>
+          {% if log.status == 'berhasil' %}
+            <span class="badge ok">berhasil</span>
+          {% else %}
+            <span class="badge bad">gagal</span>
+          {% endif %}
+        </td>
+        <td class="muted">{{ log.keterangan or '-' }}</td>
+        <td class="muted">{{ log.ip_address or '-' }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="6" class="muted center">Belum ada aktivitas tercatat.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

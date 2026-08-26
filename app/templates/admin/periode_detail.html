@@ -1,0 +1,155 @@
+{% extends "admin/base_admin.html" %}
+{% block title %}{{ periode.nama_periode }}{% endblock %}
+{% block content %}
+<a href="{{ url_for('admin.periode_list') }}" class="text-sm text-stone-500 hover:text-brand-600">← Kembali ke Periode Magang</a>
+
+<div class="flex items-start justify-between mt-2 mb-6">
+  <div>
+    <h1 class="text-2xl font-bold text-stone-800">{{ periode.nama_periode }}</h1>
+    <p class="text-stone-500 text-sm mt-1">
+      Template aktif: <span class="font-medium text-stone-600">{{ periode.template.nama_template if periode.template else '— belum dipilih' }}</span>
+    </p>
+  </div>
+  <div x-data="{ open: false }" class="relative">
+    <button @click="open = !open" class="bg-stone-100 hover:bg-stone-200 text-stone-700 text-sm font-medium px-4 py-2.5 rounded-lg transition">
+      ⚙ Pengaturan Periode
+    </button>
+    <div x-show="open" x-cloak @click.outside="open = false"
+         class="absolute right-0 mt-2 w-80 bg-white rounded-xl border border-stone-200 shadow-lg p-5 z-10">
+      <form method="post" action="{{ url_for('admin.periode_edit', periode_id=periode.id) }}" class="space-y-3">
+        <div>
+          <label class="block text-xs font-medium text-stone-500 mb-1">Nama Periode</label>
+          <input type="text" name="nama_periode" value="{{ periode.nama_periode }}" required
+                 class="w-full rounded-lg border border-stone-300 px-3 py-2 text-sm focus:ring-2 focus:ring-brand-500 outline-none">
+        </div>
+        <div class="grid grid-cols-2 gap-2">
+          <div>
+            <label class="block text-xs font-medium text-stone-500 mb-1">Mulai</label>
+            <input type="text" id="edit_tgl_mulai" name="tanggal_mulai"
+                   value="{{ periode.tanggal_mulai.strftime('%Y-%m-%d') if periode.tanggal_mulai else '' }}"
+                   class="w-full rounded-lg border border-stone-300 px-2 py-2 text-sm focus:ring-2 focus:ring-brand-500 outline-none">
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-stone-500 mb-1">Selesai</label>
+            <input type="text" id="edit_tgl_selesai" name="tanggal_selesai"
+                   value="{{ periode.tanggal_selesai.strftime('%Y-%m-%d') if periode.tanggal_selesai else '' }}"
+                   class="w-full rounded-lg border border-stone-300 px-2 py-2 text-sm focus:ring-2 focus:ring-brand-500 outline-none">
+          </div>
+        </div>
+        <div>
+          <label class="block text-xs font-medium text-stone-500 mb-1">Template Sertifikat</label>
+          <select name="template_id" class="w-full rounded-lg border border-stone-300 px-2 py-2 text-sm focus:ring-2 focus:ring-brand-500 outline-none">
+            <option value="">— Belum dipilih —</option>
+            {% for t in template_list %}
+            <option value="{{ t.id }}" {{ 'selected' if periode.template_id == t.id else '' }}>{{ t.nama_template }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <button type="submit" class="w-full bg-brand-600 hover:bg-brand-700 text-white text-sm font-medium py-2 rounded-lg transition">
+          Simpan Perubahan
+        </button>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- Ringkasan status (langsung di halaman ini, tanpa menu terpisah) -->
+<div class="grid grid-cols-4 gap-4 mb-6">
+  <div class="bg-white rounded-xl border border-stone-200 p-4">
+    <div class="text-2xl font-bold text-stone-800">{{ total }}</div>
+    <div class="text-xs text-stone-400 mt-0.5">Total Peserta</div>
+  </div>
+  <div class="bg-white rounded-xl border border-stone-200 p-4">
+    <div class="text-2xl font-bold text-emerald-600">{{ sudah }}</div>
+    <div class="text-xs text-stone-400 mt-0.5">Sudah Diambil</div>
+  </div>
+  <div class="bg-white rounded-xl border border-stone-200 p-4">
+    <div class="text-2xl font-bold text-amber-600">{{ belum }}</div>
+    <div class="text-xs text-stone-400 mt-0.5">Belum Diambil</div>
+  </div>
+  <div class="bg-white rounded-xl border border-stone-200 p-4">
+    <div class="text-2xl font-bold text-rose-600">{{ gagal }}</div>
+    <div class="text-xs text-stone-400 mt-0.5">Percobaan Gagal</div>
+  </div>
+</div>
+
+<div class="flex items-center justify-between mb-3">
+  <h2 class="font-semibold text-stone-700">Data Peserta</h2>
+  <div x-data="{ open: false }" class="relative">
+    <button @click="open = !open" class="bg-brand-600 hover:bg-brand-700 text-white text-sm font-medium px-4 py-2 rounded-lg transition">
+      + Upload Data Peserta
+    </button>
+    <div x-show="open" x-cloak @click.outside="open = false"
+         class="absolute right-0 mt-2 w-80 bg-white rounded-xl border border-stone-200 shadow-lg p-5 z-10">
+      <form method="post" action="{{ url_for('admin.upload_tambahan', periode_id=periode.id) }}"
+            enctype="multipart/form-data" class="space-y-3">
+        <p class="text-xs text-stone-400">
+          Kolom: Nama, NIM, Fakultas, Universitas, Email, No. WA.
+          <a href="{{ url_for('admin.unduh_contoh_excel') }}" class="text-brand-600 underline">Unduh contoh</a>
+        </p>
+        <input type="file" name="file_excel" accept=".xlsx" required
+               class="w-full text-xs border border-stone-300 rounded-lg file:mr-2 file:py-2 file:px-3 file:border-0 file:bg-brand-50 file:text-brand-700">
+        <button type="submit" class="w-full bg-brand-600 hover:bg-brand-700 text-white text-sm font-medium py-2 rounded-lg transition">
+          Upload &amp; Buat Nomor Otomatis
+        </button>
+      </form>
+    </div>
+  </div>
+</div>
+
+<div class="bg-white rounded-xl border border-stone-200 overflow-hidden">
+  <table class="w-full text-sm">
+    <thead>
+      <tr class="bg-stone-50 text-stone-500 text-xs uppercase tracking-wide">
+        <th class="text-left px-4 py-3 font-medium">No. Ref</th>
+        <th class="text-left px-4 py-3 font-medium">Nama</th>
+        <th class="text-left px-4 py-3 font-medium">NIM</th>
+        <th class="text-left px-4 py-3 font-medium">Akun</th>
+        <th class="text-left px-4 py-3 font-medium">Waktu Diambil</th>
+        <th class="text-left px-4 py-3 font-medium">Status</th>
+        <th class="text-left px-4 py-3 font-medium">Aksi</th>
+      </tr>
+    </thead>
+    <tbody class="divide-y divide-stone-100">
+      {% for p in peserta_list %}
+      <tr class="hover:bg-stone-50">
+        <td class="px-4 py-3 font-mono text-xs text-stone-500">{{ p.no_ref }}</td>
+        <td class="px-4 py-3 font-medium text-stone-700">{{ p.nama }}</td>
+        <td class="px-4 py-3 text-stone-500">{{ p.nim }}</td>
+        <td class="px-4 py-3 text-stone-500">{{ p.no_wa }}</td>
+        <td class="px-4 py-3 text-stone-500">{{ p.waktu_diambil.strftime('%d/%m/%y %H:%M') if p.waktu_diambil else '—' }}</td>
+        <td class="px-4 py-3">
+          {% if p.status == 'terkirim' %}
+            <span class="text-xs bg-emerald-100 text-emerald-700 px-2 py-1 rounded-full font-medium">Sudah Diambil</span>
+          {% else %}
+            <span class="text-xs bg-amber-100 text-amber-700 px-2 py-1 rounded-full font-medium">Belum Diambil</span>
+          {% endif %}
+          {% if p.percobaan_gagal > 0 %}
+            <span class="text-[11px] text-rose-500 block mt-1">{{ p.percobaan_gagal }}x percobaan gagal</span>
+          {% endif %}
+        </td>
+        <td class="px-4 py-3">
+          <div class="flex gap-2">
+            <form method="post" action="{{ url_for('admin.reset_peserta', peserta_id=p.id) }}">
+              <button type="submit" onclick="return confirm('Reset status {{ p.nama }} ke Belum Diambil?')"
+                      class="text-xs text-stone-500 hover:text-brand-600 underline">Reset</button>
+            </form>
+            <form method="post" action="{{ url_for('admin.hapus_peserta', peserta_id=p.id) }}">
+              <button type="submit" onclick="return confirm('Hapus data {{ p.nama }}?')"
+                      class="text-xs text-stone-500 hover:text-rose-600 underline">Hapus</button>
+            </form>
+          </div>
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="7" class="px-4 py-10 text-center text-stone-400">Belum ada peserta. Klik "+ Upload Data Peserta" di atas.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<script>
+  flatpickr("#edit_tgl_mulai", { dateFormat: "Y-m-d", locale: "id" });
+  flatpickr("#edit_tgl_selesai", { dateFormat: "Y-m-d", locale: "id" });
+</script>
+{% endblock %}

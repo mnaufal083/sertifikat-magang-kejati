@@ -1,0 +1,18 @@
+{% extends "public/base_public.html" %}
+{% block title %}Sudah Diambil{% endblock %}
+{% block body %}
+<div class="min-h-screen flex items-center justify-center px-4">
+  <div class="max-w-md w-full bg-white rounded-2xl shadow-lg p-8 text-center">
+    <div class="w-14 h-14 rounded-full bg-amber-100 text-amber-600 flex items-center justify-center text-2xl mx-auto mb-4">i</div>
+    <h1 class="text-lg font-bold text-stone-800 mb-2">Sertifikat Sudah Diambil</h1>
+    <p class="text-sm text-stone-500 mb-2">
+      Data atas nama <strong>{{ peserta.nama }}</strong> sudah pernah dikirimi sertifikat
+      pada {{ peserta.waktu_diambil.strftime('%d %B %Y, %H:%M') if peserta.waktu_diambil else '-' }}.
+    </p>
+    <p class="text-sm text-stone-500">
+      Periksa kembali email <strong>{{ peserta.email }}</strong>. Jika file tidak ditemukan,
+      hubungi Bidang Pembinaan Kejaksaan Tinggi Jawa Tengah.
+    </p>
+  </div>
+</div>
+{% endblock %}
