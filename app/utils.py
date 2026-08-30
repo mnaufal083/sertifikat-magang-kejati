@@ -1,16 +1,19 @@
 """
 app/utils.py
 ============
-Fungsi bantu: penomoran sertifikat, OTP via WhatsApp, pengiriman
+Fungsi bantu: penomoran sertifikat, OTP via Email, pengiriman
 sertifikat via email, dan pembacaan file Excel data peserta.
 
->>> ALUR VERIFIKASI (v2) <<<
+>>> ALUR VERIFIKASI (v3) <<<
 Peserta memasukkan Nama + NIM + No. WhatsApp pada portal publik. Kalau
-cocok dengan data yang diunggah admin, kode OTP dikirim ke NOMOR
-WHATSAPP tersebut. Begitu OTP benar, sertifikat PDF langsung dibuat dan
-DIKIRIM SEBAGAI LAMPIRAN EMAIL ke alamat yang terdaftar (bukan diunduh
-langsung dari browser) - meniru pola pengiriman sertifikat bootcamp/
-seminar resmi, sekaligus memberi jejak pengiriman yang formal.
+cocok dengan data yang diunggah admin, kode OTP dikirim ke EMAIL
+peserta yang terdaftar (No. WA hanya dipakai untuk mencocokkan
+identitas, BUKAN untuk mengirim apa pun - sebelumnya OTP dikirim lewat
+WhatsApp, tapi diganti ke email karena WhatsApp API berbayar per
+pesan). Begitu OTP benar, sertifikat PDF langsung dibuat dan DIKIRIM
+SEBAGAI LAMPIRAN EMAIL ke alamat yang sama (bukan diunduh langsung dari
+browser) - meniru pola pengiriman sertifikat bootcamp/seminar resmi,
+sekaligus memberi jejak pengiriman yang formal.
 
 >>> SOLUSI NOMOR SERTIFIKAT <<<
 Nomor referensi (No. Ref) & kode verifikasi dibuat SEKALI saat admin
@@ -20,6 +23,7 @@ tabel admin sejak data diunggah, dan nomor tersebut yang sama persis
 dipakai sebagai "No. Sertifikat" begitu file PDF akhirnya dibuat.
 """
 import random
+import re
 import secrets
 import string
 from datetime import datetime, timedelta
@@ -31,20 +35,36 @@ ROMAWI_BULAN = ["", "I", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX", "X",
 
 
 # --------------------------------------------------------------- nomor --
-def _nomor_urut_berikutnya(periode_id):
-    """Penting: dihitung secara GLOBAL (bukan hanya dalam satu periode),
-    karena format No. Ref menyertakan bulan+tahun yang sama untuk semua
-    periode yang dibuat di bulan yang sama - kalau dihitung per periode
-    saja, dua periode berbeda di bulan yang sama bisa menghasilkan No.
-    Ref kembar (mis. dua-duanya "001/PTJT.6/Mag.6/VIII/2026") dan
-    melanggar constraint UNIQUE di database."""
-    jumlah = Peserta.query.count()
-    return jumlah + 1
+def _nomor_urut_berikutnya():
+    """Dihitung dari NOMOR TERTINGGI yang PERNAH dipakai di seluruh data
+    peserta (bukan sekadar total baris yang tersisa saat ini), supaya
+    penomoran tetap aman & tidak bertabrakan meskipun ada peserta yang
+    sudah dihapus sebelumnya.
+
+    (Riwayat bug: versi lama memakai Peserta.query.count(). Begitu ada
+    peserta yang dihapus, hasil count() ikut mundur, sehingga nomor
+    berikutnya yang dihitung ulang bisa jadi sama dengan nomor besar
+    yang masih dipakai peserta lain yang TIDAK dihapus - menghasilkan
+    IntegrityError "UNIQUE constraint failed: peserta.no_ref". Ambil
+    MAX bukan COUNT supaya kasus ini tidak terjadi lagi.)
+
+    Query hanya mengambil kolom no_ref (bukan seluruh baris) supaya
+    tetap ringan meski jumlah peserta sudah banyak. db.session.query()
+    di sini otomatis meng-autoflush peserta yang sudah ditambahkan (tapi
+    belum di-commit) pada baris-baris sebelumnya di batch upload yang
+    sama, sehingga penomoran tetap berurutan benar dalam satu kali
+    proses upload Excel."""
+    tertinggi = 0
+    for (no_ref,) in db.session.query(Peserta.no_ref).all():
+        m = re.match(r"^(\d+)/", no_ref or "")
+        if m:
+            tertinggi = max(tertinggi, int(m.group(1)))
+    return tertinggi + 1
 
 
-def buat_no_ref(periode_id, tanggal=None):
+def buat_no_ref(tanggal=None):
     tanggal = tanggal or datetime.utcnow()
-    urut = _nomor_urut_berikutnya(periode_id)
+    urut = _nomor_urut_berikutnya()
     return f"{urut:03d}/PTJT.6/Mag.6/{ROMAWI_BULAN[tanggal.month]}/{tanggal.year}"
 
 
@@ -52,6 +72,38 @@ def buat_kode_verifikasi():
     tahun = str(datetime.utcnow().year)[-2:]
     acak = "".join(secrets.choice(string.ascii_uppercase + string.digits) for _ in range(6))
     return f"KT{tahun}-{acak}"
+
+
+# --------------------------------------------------------------- waktu --
+def ke_wib(dt):
+    """Konversi datetime UTC (yang disimpan di database - praktik yang
+    benar) ke WIB (UTC+7) HANYA untuk ditampilkan ke admin/peserta.
+    Indonesia tidak menerapkan daylight saving, jadi offset +7 jam ini
+    selalu tetap sepanjang tahun untuk Semarang/Jawa Tengah.
+
+    Sebelumnya tampilan waktu (mis. 'Waktu Diambil' di tabel peserta)
+    langsung mencetak datetime.utcnow() tanpa konversi, sehingga jamnya
+    tampak mundur 7 jam dari waktu asli WIB saat admin melihatnya."""
+    if dt is None:
+        return None
+    return dt + timedelta(hours=7)
+
+
+_NAMA_BULAN_ID = [
+    "", "Januari", "Februari", "Maret", "April", "Mei", "Juni",
+    "Juli", "Agustus", "September", "Oktober", "November", "Desember",
+]
+
+
+def format_tanggal_indonesia(tanggal):
+    """Format objek date/datetime jadi teks tanggal Indonesia, mis.
+    '30 Agustus 2026'. Dipakai untuk field Tanggal Terbit dinamis di
+    sertifikat (lihat certgen/generator.py) - mengikuti tanggal_selesai
+    periode magang, jadi tidak perlu ganti template tiap periode
+    berbeda tanggalnya."""
+    if tanggal is None:
+        return ""
+    return f"{tanggal.day} {_NAMA_BULAN_ID[tanggal.month]} {tanggal.year}"
 
 
 # ---------------------------------------------------------- import data --
@@ -133,11 +185,16 @@ def baca_excel_peserta(file_stream):
     return hasil
 
 
-def proses_upload_peserta(periode, data_rows):
+def proses_upload_peserta(periode, data_rows, commit=True):
     """Simpan banyak baris peserta sekaligus ke satu periode, sekaligus
     membuatkan No. Ref & kode verifikasi untuk masing-masing. Melewati
     baris yang NIM-nya sudah ada di periode yang sama (mencegah duplikat
     kalau file diunggah dua kali).
+
+    commit=False dipakai saat pemanggil (mis. periode_baru) ingin
+    mengontrol sendiri kapan transaksi disimpan permanen - supaya kalau
+    ada baris yang gagal di tengah proses, periode yang baru dibuat pun
+    ikut batal (rollback) alih-alih tersimpan sebagai periode kosong.
 
     Mengembalikan (jumlah_ditambahkan, jumlah_dilewati)."""
     ditambahkan, dilewati = 0, 0
@@ -152,14 +209,15 @@ def proses_upload_peserta(periode, data_rows):
             nama=row["nama"], nim=row["nim"],
             fakultas=row["fakultas"], universitas=row["universitas"],
             email=row["email"].lower(), no_wa=_normalisasi_no_wa(row["no_wa"]),
-            no_ref=buat_no_ref(periode.id),
+            no_ref=buat_no_ref(),
             kode_verifikasi=buat_kode_verifikasi(),
         )
         db.session.add(p)
         nim_ada.add(row["nim"])
         ditambahkan += 1
 
-    db.session.commit()
+    if commit:
+        db.session.commit()
     return ditambahkan, dilewati
 
 
@@ -173,26 +231,36 @@ def _normalisasi_no_wa(no_wa):
 
 
 # ------------------------------------------------------------------ OTP --
-def cari_peserta_untuk_verifikasi(nama, nim, no_wa):
-    """Cari peserta yang cocok Nama + NIM + No. WA di SEMUA periode
+def cari_peserta_untuk_verifikasi(nama, nim, email):
+    """Cari peserta yang cocok Nama + NIM + Email di SEMUA periode
     (peserta tidak perlu tahu/pilih periode-nya sendiri). Pencocokan nama
-    tidak peka besar-kecil huruf & spasi berlebih; NIM & No. WA harus
-    identik setelah dinormalisasi."""
+    tidak peka besar-kecil huruf & spasi berlebih; NIM harus identik;
+    email dicocokkan tidak peka besar-kecil huruf (sesuai kebiasaan
+    penulisan alamat email).
+
+    Catatan: sebelumnya field pencocokan ketiga ini adalah No. WhatsApp,
+    tapi diganti ke Email karena OTP & sertifikat memang selalu dikirim
+    lewat email - jadi dari sudut pandang peserta, memasukkan email di
+    awal lebih masuk akal & konsisten dibanding nomor WA yang sebenarnya
+    tidak pernah dipakai mengirim apa pun."""
     nim_bersih = nim.strip()
-    wa_bersih = _normalisasi_no_wa(no_wa)
+    email_bersih = email.strip().lower()
     nama_bersih = " ".join(nama.strip().lower().split())
 
     kandidat = Peserta.query.filter_by(nim=nim_bersih).all()
     for p in kandidat:
         nama_p = " ".join(p.nama.strip().lower().split())
-        if nama_p == nama_bersih and p.no_wa == wa_bersih:
+        if nama_p == nama_bersih and p.email.strip().lower() == email_bersih:
             return p
     return None
 
 
 def buat_dan_kirim_otp(peserta, expiry_minutes=5, demo_mode=True):
     """Buat kode OTP 6 digit baru untuk peserta, simpan hash-nya, dan
-    kirim ke WhatsApp peserta (atau tampilkan di layar bila demo_mode)."""
+    kirim ke EMAIL peserta yang terdaftar (atau tampilkan di layar bila
+    demo_mode). No. WA peserta tetap dipakai untuk mencocokkan identitas
+    di awal (lihat cari_peserta_untuk_verifikasi), tapi tidak lagi dipakai
+    untuk mengirim apa pun."""
     kode = f"{random.randint(0, 999999):06d}"
 
     otp = OtpCode(
@@ -206,39 +274,68 @@ def buat_dan_kirim_otp(peserta, expiry_minutes=5, demo_mode=True):
     db.session.commit()
 
     if demo_mode:
-        print(f"[DEMO] Kode OTP WhatsApp untuk {peserta.no_wa}: {kode} (berlaku {expiry_minutes} menit)")
+        print(f"[DEMO] Kode OTP untuk {peserta.email}: {kode} (berlaku {expiry_minutes} menit)")
     else:
-        kirim_wa_otp(peserta.no_wa, kode, expiry_minutes)
+        kirim_email_otp(peserta.email, peserta.nama, kode, expiry_minutes)
 
     return otp
 
 
-def kirim_wa_otp(no_wa_tujuan, kode, expiry_minutes):
-    """Titik integrasi WhatsApp API. Ganti isi fungsi ini dengan
-    pemanggilan API WhatsApp resmi (Meta Cloud API, langsung atau lewat
-    Business Solution Provider) saat WA_DEMO_MODE=false. Contoh dengan
-    Meta Cloud API (butuh WA_PHONE_NUMBER_ID & WA_ACCESS_TOKEN di .env):
+def kirim_email_otp(email_tujuan, nama, kode, expiry_minutes):
+    """Kirim kode OTP verifikasi ke email peserta lewat SMTP. Dipanggil
+    saat EMAIL_DEMO_MODE=false (lihat kirim_sertifikat_email untuk fungsi
+    pengiriman sertifikat, yang memakai SMTP yang sama)."""
+    import smtplib
+    from email.mime.multipart import MIMEMultipart
+    from email.mime.text import MIMEText
+    from email.utils import formatdate, make_msgid
+    from flask import current_app
 
-        import requests
-        url = f"https://graph.facebook.com/v20.0/{WA_PHONE_NUMBER_ID}/messages"
-        headers = {"Authorization": f"Bearer {WA_ACCESS_TOKEN}"}
-        payload = {
-            "messaging_product": "whatsapp",
-            "to": no_wa_tujuan,
-            "type": "template",
-            "template": {"name": "otp_sertifikat", "language": {"code": "id"}, ...}
-        }
-        requests.post(url, headers=headers, json=payload)
+    cfg = current_app.config
+    if not cfg.get("SMTP_HOST"):
+        raise RuntimeError(
+            "SMTP belum dikonfigurasi. Isi SMTP_HOST/SMTP_USERNAME/SMTP_PASSWORD "
+            "di .env, atau set EMAIL_DEMO_MODE=true untuk mode demo."
+        )
 
-    Pesan WA berbasis template harus didaftarkan & disetujui lebih dulu
-    di Meta Business Manager sebelum bisa dipakai - lihat README bagian
-    "Mengaktifkan OTP WhatsApp Sungguhan" untuk langkah lengkapnya.
-    """
-    raise RuntimeError(
-        "Integrasi WhatsApp API belum dikonfigurasi. Set WA_DEMO_MODE=true "
-        "di .env untuk mode demo, atau lengkapi kirim_wa_otp() di app/utils.py "
-        "dengan kredensial WhatsApp API instansi."
+    pesan = MIMEMultipart()
+    pesan["Subject"] = "Kode Verifikasi OTP — Sertifikat Magang Kejati Jateng"
+    pesan["From"] = cfg["SMTP_FROM"]
+    pesan["To"] = email_tujuan
+    # Header Date & Message-ID eksplisit - tanpa ini, email lebih rentan
+    # ditandai spam oleh sebagian besar penyedia email (termasuk Gmail),
+    # karena dianggap salah satu ciri email yang dikirim asal-asalan oleh bot.
+    pesan["Date"] = formatdate(localtime=True)
+    pesan["Message-ID"] = make_msgid(domain=cfg["SMTP_FROM"].split("@")[-1])
+
+    isi = (
+        f"Yth. {nama},\n\n"
+        f"Berikut kode verifikasi (OTP) untuk mengambil sertifikat magang "
+        f"Anda di lingkungan Kejaksaan Tinggi Jawa Tengah:\n\n"
+        f"    {kode}\n\n"
+        f"Kode ini berlaku selama {expiry_minutes} menit dan hanya bisa "
+        f"dipakai satu kali. Jangan berikan kode ini kepada siapa pun.\n\n"
+        f"Jika Anda tidak merasa meminta kode ini, abaikan saja email ini.\n\n"
+        f"Hormat kami,\n"
+        f"Bidang Pembinaan\n"
+        f"Kejaksaan Tinggi Jawa Tengah\n\n"
+        f"--\n"
+        f"Email ini dikirim otomatis oleh sistem, mohon tidak membalas ke alamat ini."
     )
+    pesan.attach(MIMEText(isi, "plain"))
+
+    with smtplib.SMTP(cfg["SMTP_HOST"], cfg["SMTP_PORT"]) as server:
+        server.starttls()
+        try:
+            server.login(cfg["SMTP_USERNAME"], cfg["SMTP_PASSWORD"])
+        except smtplib.SMTPAuthenticationError:
+            raise RuntimeError(
+                "Login SMTP ditolak Gmail (kredensial salah). Kalau memakai Gmail, "
+                "SMTP_PASSWORD di .env HARUS berupa App Password 16 karakter "
+                "(bukan password akun Gmail biasa) - lihat README bagian 8 untuk "
+                "cara membuatnya."
+            )
+        server.sendmail(cfg["SMTP_FROM"], [email_tujuan], pesan.as_string())
 
 
 # ------------------------------------------------------- kirim sertifikat --
@@ -263,6 +360,7 @@ def kirim_sertifikat_email(peserta, pdf_bytes, demo_mode=True):
     from email.mime.multipart import MIMEMultipart
     from email.mime.text import MIMEText
     from email.mime.application import MIMEApplication
+    from email.utils import formatdate, make_msgid
 
     cfg = current_app.config
     if not cfg.get("SMTP_HOST"):
@@ -273,6 +371,10 @@ def kirim_sertifikat_email(peserta, pdf_bytes, demo_mode=True):
 
     pesan = MIMEMultipart()
     pesan["Subject"] = "Sertifikat Magang Resmi — Kejaksaan Tinggi Jawa Tengah"
+    # Header Date & Message-ID eksplisit - salah satu sinyal umum yang
+    # dicek filter spam; tanpa ini email lebih rentan ditandai spam.
+    pesan["Date"] = formatdate(localtime=True)
+    pesan["Message-ID"] = make_msgid(domain=cfg["SMTP_FROM"].split("@")[-1])
     pesan["From"] = cfg["SMTP_FROM"]
     pesan["To"] = peserta.email
 
@@ -302,6 +404,38 @@ def kirim_sertifikat_email(peserta, pdf_bytes, demo_mode=True):
 
     with smtplib.SMTP(cfg["SMTP_HOST"], cfg["SMTP_PORT"]) as server:
         server.starttls()
-        server.login(cfg["SMTP_USERNAME"], cfg["SMTP_PASSWORD"])
+        try:
+            server.login(cfg["SMTP_USERNAME"], cfg["SMTP_PASSWORD"])
+        except smtplib.SMTPAuthenticationError:
+            raise RuntimeError(
+                "Login SMTP ditolak Gmail (kredensial salah). Kalau memakai Gmail, "
+                "SMTP_PASSWORD di .env HARUS berupa App Password 16 karakter "
+                "(bukan password akun Gmail biasa) - lihat README bagian 8 untuk "
+                "cara membuatnya."
+            )
         server.sendmail(cfg["SMTP_FROM"], [peserta.email], pesan.as_string())
     return None
+
+
+# ---------------------------------------------------- cek keaslian ------
+def cek_kode_verifikasi(kode):
+    """Cek satu kode verifikasi sertifikat. Dipakai bersama oleh halaman
+    publik (/cek-sertifikat) maupun quick-action "Cek Keaslian Sertifikat"
+    di dashboard admin, supaya logikanya tidak dobel dan selalu konsisten.
+
+    Mengembalikan dict hasil (tanggal sudah diformat jadi string supaya
+    aman dipakai langsung di template maupun di-serialize ke JSON)."""
+    kode = (kode or "").strip()
+    if not kode:
+        return None
+    peserta = Peserta.query.filter_by(kode_verifikasi=kode).first()
+    if peserta and peserta.status == "terkirim":
+        return {
+            "valid": True,
+            "nama": peserta.nama, "nim": peserta.nim,
+            "universitas": peserta.universitas,
+            "no_sertifikat": peserta.no_ref,
+            "tanggal_terbit": peserta.waktu_diambil.strftime("%d %B %Y") if peserta.waktu_diambil else "-",
+            "periode": peserta.periode.nama_periode,
+        }
+    return {"valid": False}

@@ -24,11 +24,27 @@ from flask import (
 from app.extensions import db
 from app.models import Peserta
 from app.utils import (
-    cari_peserta_untuk_verifikasi, buat_dan_kirim_otp, kirim_sertifikat_email,
+    cari_peserta_untuk_verifikasi, buat_dan_kirim_otp, kirim_sertifikat_email, cek_kode_verifikasi,
+    format_tanggal_indonesia,
 )
 from app.certgen.generator import generate_certificate_pdf_bytes
 
 public_bp = Blueprint("public", __name__)
+
+
+@public_bp.after_request
+def _no_cache_alur_klaim(response):
+    """Cegah browser menampilkan halaman OTP/"Verifikasi Berhasil" yang
+    sudah basi dari cache saat tombol back (kembali) browser ditekan -
+    tanpa header ini, browser bisa menampilkan halaman lama dari memori
+    (bfcache) alih-alih meminta ulang ke server, sehingga terlihat seperti
+    "nyangkut" di step yang sudah tidak valid. Dengan header ini, browser
+    dipaksa request ulang ke server, yang otomatis mengarahkan peserta
+    balik ke halaman awal /ambil-sertifikat kalau sesinya sudah selesai/
+    tidak valid lagi (lihat verifikasi_otp)."""
+    response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+    response.headers["Pragma"] = "no-cache"
+    return response
 
 
 @public_bp.route("/")
@@ -39,7 +55,7 @@ def index():
 # ------------------------------------------------------- 1. form klaim --
 @public_bp.route("/ambil-sertifikat")
 def ambil_sertifikat():
-    return render_template("public/ambil_sertifikat.html")
+    return render_template("public/ambil_sertifikat.html", langkah=1)
 
 
 # ---------------------------------------------------- 2. cocokkan + OTP -
@@ -47,16 +63,16 @@ def ambil_sertifikat():
 def kirim_otp():
     nama = request.form.get("nama", "").strip()
     nim = request.form.get("nim", "").strip()
-    no_wa = request.form.get("no_wa", "").strip()
+    email = request.form.get("email", "").strip()
 
-    if not nama or not nim or not no_wa:
-        flash("Nama, NIM, dan No. WhatsApp wajib diisi.", "error")
+    if not nama or not nim or not email:
+        flash("Nama, NIM, dan Email wajib diisi.", "error")
         return redirect(url_for("public.ambil_sertifikat"))
 
-    peserta = cari_peserta_untuk_verifikasi(nama, nim, no_wa)
+    peserta = cari_peserta_untuk_verifikasi(nama, nim, email)
     if not peserta:
         flash(
-            "Data tidak ditemukan. Pastikan Nama, NIM, dan No. WhatsApp sesuai "
+            "Data tidak ditemukan. Pastikan Nama, NIM, dan Email sesuai "
             "dengan yang terdaftar saat magang. Jika masih gagal, hubungi Bidang "
             "Pembinaan Kejaksaan Tinggi Jawa Tengah.", "error"
         )
@@ -65,18 +81,33 @@ def kirim_otp():
     if peserta.status == "terkirim":
         return render_template("public/sudah_diambil.html", peserta=peserta)
 
-    otp = buat_dan_kirim_otp(
-        peserta,
-        expiry_minutes=current_app.config["OTP_EXPIRY_MINUTES"],
-        demo_mode=current_app.config["WA_DEMO_MODE"],
-    )
+    try:
+        otp = buat_dan_kirim_otp(
+            peserta,
+            expiry_minutes=current_app.config["OTP_EXPIRY_MINUTES"],
+            demo_mode=current_app.config["EMAIL_DEMO_MODE"],
+        )
+    except RuntimeError as e:
+        # Gagal kirim (mis. SMTP salah kredensial/konfigurasi) - jangan
+        # sampai peserta melihat halaman error mentah; arahkan balik
+        # dengan pesan yang jelas. Detail teknis tetap tercatat di log
+        # server untuk admin.
+        current_app.logger.error(f"Gagal mengirim OTP ke {peserta.email}: {e}")
+        flash(
+            "Gagal mengirim kode OTP saat ini karena kendala sistem pengiriman "
+            "email. Silakan coba lagi sebentar lagi, atau hubungi Bidang "
+            "Pembinaan Kejaksaan Tinggi Jawa Tengah jika masalah berlanjut.",
+            "error",
+        )
+        return redirect(url_for("public.ambil_sertifikat"))
+
     session["peserta_id_verifikasi"] = peserta.id
     session["otp_id_verifikasi"] = otp.id
 
-    demo_kode = otp.kode_plain_demo if current_app.config["WA_DEMO_MODE"] else None
+    demo_kode = otp.kode_plain_demo if current_app.config["EMAIL_DEMO_MODE"] else None
     return render_template(
         "public/otp.html", peserta=peserta, demo_kode=demo_kode,
-        expiry_minutes=current_app.config["OTP_EXPIRY_MINUTES"],
+        expiry_minutes=current_app.config["OTP_EXPIRY_MINUTES"], langkah=2,
     )
 
 
@@ -94,9 +125,9 @@ def verifikasi_otp():
     otp = OtpCode.query.get_or_404(otp_id)
 
     if request.method == "GET":
-        demo_kode = otp.kode_plain_demo if current_app.config["WA_DEMO_MODE"] else None
+        demo_kode = otp.kode_plain_demo if current_app.config["EMAIL_DEMO_MODE"] else None
         return render_template("public/otp.html", peserta=peserta, demo_kode=demo_kode,
-                                expiry_minutes=current_app.config["OTP_EXPIRY_MINUTES"])
+                                expiry_minutes=current_app.config["OTP_EXPIRY_MINUTES"], langkah=2)
 
     kode_input = "".join(request.form.getlist("digit")).strip() or request.form.get("kode", "").strip()
 
@@ -118,9 +149,9 @@ def verifikasi_otp():
         db.session.commit()
         sisa = current_app.config["OTP_MAX_ATTEMPTS"] - otp.percobaan_gagal
         flash(f"Kode OTP salah. Sisa percobaan: {max(sisa, 0)}.", "error")
-        demo_kode = otp.kode_plain_demo if current_app.config["WA_DEMO_MODE"] else None
+        demo_kode = otp.kode_plain_demo if current_app.config["EMAIL_DEMO_MODE"] else None
         return render_template("public/otp.html", peserta=peserta, demo_kode=demo_kode,
-                                expiry_minutes=current_app.config["OTP_EXPIRY_MINUTES"])
+                                expiry_minutes=current_app.config["OTP_EXPIRY_MINUTES"], langkah=2)
 
     # --- sukses: generate PDF & kirim ke email ---
     otp.terpakai = True
@@ -140,10 +171,29 @@ def verifikasi_otp():
         fakultas=peserta.fakultas, universitas=peserta.universitas,
         no_sertifikat=peserta.no_ref, kode_verifikasi=peserta.kode_verifikasi,
         verify_url=verify_url,
+        tanggal_terbit=format_tanggal_indonesia(periode.tanggal_selesai),
         font_nama_path=tpl.font_nama_path, font_bold_path=tpl.font_bold_path, font_reg_path=tpl.font_reg_path,
+        font_tanggal_path=tpl.font_tanggal_path,
     )
 
-    demo_filename = kirim_sertifikat_email(peserta, pdf_bytes, demo_mode=current_app.config["EMAIL_DEMO_MODE"])
+    demo_filename = None
+    try:
+        demo_filename = kirim_sertifikat_email(peserta, pdf_bytes, demo_mode=current_app.config["EMAIL_DEMO_MODE"])
+    except RuntimeError as e:
+        # Sama seperti pengiriman OTP - jangan sampai peserta yang sudah
+        # lolos verifikasi OTP terjebak di halaman error mentah. Status
+        # peserta SENGAJA tidak diubah jadi "terkirim" di sini, supaya
+        # peserta bisa mengulang dari awal (minta OTP baru) begitu SMTP
+        # sudah diperbaiki admin, tanpa dianggap "sudah pernah diambil".
+        current_app.logger.error(f"Gagal mengirim sertifikat ke {peserta.email}: {e}")
+        flash(
+            "Kode OTP Anda benar, tapi sertifikat gagal terkirim karena kendala "
+            "sistem pengiriman email. Silakan ulangi proses dari awal beberapa "
+            "saat lagi, atau hubungi Bidang Pembinaan Kejaksaan Tinggi Jawa "
+            "Tengah jika masalah berlanjut.",
+            "error",
+        )
+        return redirect(url_for("public.ambil_sertifikat"))
 
     from datetime import datetime
     peserta.status = "terkirim"
@@ -155,7 +205,7 @@ def verifikasi_otp():
 
     return render_template(
         "public/terkirim.html", peserta=peserta,
-        demo_mode=current_app.config["EMAIL_DEMO_MODE"], demo_filename=demo_filename,
+        demo_mode=current_app.config["EMAIL_DEMO_MODE"], demo_filename=demo_filename, langkah=3,
     )
 
 
@@ -163,20 +213,7 @@ def verifikasi_otp():
 @public_bp.route("/cek-sertifikat")
 def cek_sertifikat():
     kode = request.args.get("kode", "").strip()
-    hasil_cek = None
-    if kode:
-        peserta = Peserta.query.filter_by(kode_verifikasi=kode).first()
-        if peserta and peserta.status == "terkirim":
-            hasil_cek = {
-                "valid": True,
-                "nama": peserta.nama, "nim": peserta.nim,
-                "universitas": peserta.universitas,
-                "no_sertifikat": peserta.no_ref,
-                "tanggal_terbit": peserta.waktu_diambil,
-                "periode": peserta.periode.nama_periode,
-            }
-        else:
-            hasil_cek = {"valid": False}
+    hasil_cek = cek_kode_verifikasi(kode) if kode else None
     return render_template("public/cek_sertifikat.html", kode=kode, hasil_cek=hasil_cek)
 
 

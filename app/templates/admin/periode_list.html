@@ -14,13 +14,15 @@
 
 <div class="grid gap-4">
   {% for r in ringkasan %}
-  <a href="{{ url_for('admin.periode_detail', periode_id=r.periode.id) }}"
-     class="block bg-white rounded-xl border border-stone-200 hover:border-brand-300 hover:shadow-md transition p-5">
-    <div class="flex items-center justify-between">
-      <div>
-        <div class="flex items-center gap-2">
+  <div class="relative bg-white rounded-xl border border-stone-200 hover:border-brand-300 hover:shadow-md transition p-5 cursor-pointer"
+       onclick="window.location='{{ url_for('admin.periode_detail', periode_id=r.periode.id) }}'">
+    <div class="flex items-center justify-between gap-4">
+      <div class="min-w-0">
+        <div class="flex items-center gap-2 flex-wrap">
           <h2 class="font-semibold text-stone-800">{{ r.periode.nama_periode }}</h2>
-          {% if r.periode.aktif %}
+          {% if r.total > 0 and r.belum == 0 %}
+            <span class="text-xs bg-sky-100 text-sky-700 px-2 py-0.5 rounded-full font-medium">✓ Selesai</span>
+          {% elif r.periode.aktif %}
             <span class="text-xs bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full font-medium">Aktif</span>
           {% endif %}
         </div>
@@ -34,23 +36,35 @@
           Template: {{ r.periode.template.nama_template if r.periode.template else '— belum dipilih' }}
         </p>
       </div>
-      <div class="flex items-center gap-6 text-center">
-        <div>
-          <div class="text-lg font-bold text-stone-700">{{ r.total }}</div>
-          <div class="text-[11px] text-stone-400 uppercase tracking-wide">Peserta</div>
+      <div class="flex items-center gap-5 shrink-0">
+        <div class="flex items-center gap-5 text-center">
+          <div>
+            <div class="text-lg font-bold text-stone-700">{{ r.total }}</div>
+            <div class="text-[11px] text-stone-400 uppercase tracking-wide">Peserta</div>
+          </div>
+          <div>
+            <div class="text-lg font-bold text-emerald-600">{{ r.sudah }}</div>
+            <div class="text-[11px] text-stone-400 uppercase tracking-wide">Terkirim</div>
+          </div>
+          <div>
+            <div class="text-lg font-bold text-amber-600">{{ r.belum }}</div>
+            <div class="text-[11px] text-stone-400 uppercase tracking-wide">Belum</div>
+          </div>
         </div>
-        <div>
-          <div class="text-lg font-bold text-emerald-600">{{ r.sudah }}</div>
-          <div class="text-[11px] text-stone-400 uppercase tracking-wide">Terkirim</div>
-        </div>
-        <div>
-          <div class="text-lg font-bold text-amber-600">{{ r.belum }}</div>
-          <div class="text-[11px] text-stone-400 uppercase tracking-wide">Belum</div>
-        </div>
+        <div class="w-px h-9 bg-stone-200"></div>
+        <button type="button" title="Hapus periode ini"
+                onclick="event.stopPropagation(); if(confirm('Hapus periode &quot;{{ r.periode.nama_periode }}&quot; beserta {{ r.total }} data peserta di dalamnya? Tindakan ini tidak bisa dibatalkan.')) { document.getElementById('hapus-periode-{{ r.periode.id }}').submit(); }"
+                class="w-9 h-9 flex items-center justify-center rounded-lg text-stone-400 hover:text-rose-600 hover:bg-rose-50 transition">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" class="w-[18px] h-[18px]">
+            <path d="M4 7h16M9 7V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v3m3 0-.7 12.1a2 2 0 0 1-2 1.9H8.7a2 2 0 0 1-2-1.9L6 7h12ZM10 11v6M14 11v6"/>
+          </svg>
+        </button>
         <span class="text-stone-300">→</span>
       </div>
     </div>
-  </a>
+    <form id="hapus-periode-{{ r.periode.id }}" method="post"
+          action="{{ url_for('admin.periode_hapus', periode_id=r.periode.id) }}" class="hidden"></form>
+  </div>
   {% else %}
   <div class="bg-white rounded-xl border border-dashed border-stone-300 p-10 text-center text-stone-400">
     Belum ada periode magang. Klik "+ Buat Periode Baru" untuk mulai.

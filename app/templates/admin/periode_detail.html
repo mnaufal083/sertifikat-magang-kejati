@@ -5,7 +5,14 @@
 
 <div class="flex items-start justify-between mt-2 mb-6">
   <div>
-    <h1 class="text-2xl font-bold text-stone-800">{{ periode.nama_periode }}</h1>
+    <div class="flex items-center gap-2">
+      <h1 class="text-2xl font-bold text-stone-800">{{ periode.nama_periode }}</h1>
+      {% if total > 0 and belum == 0 %}
+        <span class="text-xs bg-sky-100 text-sky-700 px-2 py-0.5 rounded-full font-medium">✓ Selesai</span>
+      {% elif periode.aktif %}
+        <span class="text-xs bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full font-medium">Aktif</span>
+      {% endif %}
+    </div>
     <p class="text-stone-500 text-sm mt-1">
       Template aktif: <span class="font-medium text-stone-600">{{ periode.template.nama_template if periode.template else '— belum dipilih' }}</span>
     </p>
@@ -22,19 +29,12 @@
           <input type="text" name="nama_periode" value="{{ periode.nama_periode }}" required
                  class="w-full rounded-lg border border-stone-300 px-3 py-2 text-sm focus:ring-2 focus:ring-brand-500 outline-none">
         </div>
-        <div class="grid grid-cols-2 gap-2">
-          <div>
-            <label class="block text-xs font-medium text-stone-500 mb-1">Mulai</label>
-            <input type="text" id="edit_tgl_mulai" name="tanggal_mulai"
-                   value="{{ periode.tanggal_mulai.strftime('%Y-%m-%d') if periode.tanggal_mulai else '' }}"
-                   class="w-full rounded-lg border border-stone-300 px-2 py-2 text-sm focus:ring-2 focus:ring-brand-500 outline-none">
-          </div>
-          <div>
-            <label class="block text-xs font-medium text-stone-500 mb-1">Selesai</label>
-            <input type="text" id="edit_tgl_selesai" name="tanggal_selesai"
-                   value="{{ periode.tanggal_selesai.strftime('%Y-%m-%d') if periode.tanggal_selesai else '' }}"
-                   class="w-full rounded-lg border border-stone-300 px-2 py-2 text-sm focus:ring-2 focus:ring-brand-500 outline-none">
-          </div>
+        <div>
+          <label class="block text-xs font-medium text-stone-500 mb-1">Tanggal Terbit Sertifikat</label>
+          <input type="text" id="edit_tgl_terbit" name="tanggal_terbit"
+                 value="{{ periode.tanggal_selesai.strftime('%Y-%m-%d') if periode.tanggal_selesai else '' }}"
+                 class="w-full rounded-lg border border-stone-300 px-2 py-2 text-sm focus:ring-2 focus:ring-brand-500 outline-none">
+          <p class="text-[11px] text-stone-400 mt-1">Dicetak otomatis di sertifikat (mis. "30 Agustus 2026"), kalau templatenya sudah dikalibrasi untuk field Tanggal.</p>
         </div>
         <div>
           <label class="block text-xs font-medium text-stone-500 mb-1">Template Sertifikat</label>
@@ -104,7 +104,7 @@
         <th class="text-left px-4 py-3 font-medium">No. Ref</th>
         <th class="text-left px-4 py-3 font-medium">Nama</th>
         <th class="text-left px-4 py-3 font-medium">NIM</th>
-        <th class="text-left px-4 py-3 font-medium">Akun</th>
+        <th class="text-left px-4 py-3 font-medium">Email</th>
         <th class="text-left px-4 py-3 font-medium">Waktu Diambil</th>
         <th class="text-left px-4 py-3 font-medium">Status</th>
         <th class="text-left px-4 py-3 font-medium">Aksi</th>
@@ -116,8 +116,8 @@
         <td class="px-4 py-3 font-mono text-xs text-stone-500">{{ p.no_ref }}</td>
         <td class="px-4 py-3 font-medium text-stone-700">{{ p.nama }}</td>
         <td class="px-4 py-3 text-stone-500">{{ p.nim }}</td>
-        <td class="px-4 py-3 text-stone-500">{{ p.no_wa }}</td>
-        <td class="px-4 py-3 text-stone-500">{{ p.waktu_diambil.strftime('%d/%m/%y %H:%M') if p.waktu_diambil else '—' }}</td>
+        <td class="px-4 py-3 text-stone-500">{{ p.email }}</td>
+        <td class="px-4 py-3 text-stone-500">{{ (p.waktu_diambil | wib).strftime('%d/%m/%y %H:%M') if p.waktu_diambil else '—' }}</td>
         <td class="px-4 py-3">
           {% if p.status == 'terkirim' %}
             <span class="text-xs bg-emerald-100 text-emerald-700 px-2 py-1 rounded-full font-medium">Sudah Diambil</span>
@@ -149,7 +149,6 @@
 </div>
 
 <script>
-  flatpickr("#edit_tgl_mulai", { dateFormat: "Y-m-d", locale: "id" });
-  flatpickr("#edit_tgl_selesai", { dateFormat: "Y-m-d", locale: "id" });
+  flatpickr("#edit_tgl_terbit", { dateFormat: "Y-m-d", locale: "id" });
 </script>
 {% endblock %}

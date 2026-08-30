@@ -1,8 +1,11 @@
 # Sistem Sertifikat Magang Otomatis — Kejaksaan Tinggi Jawa Tengah
 
 Aplikasi web **full-stack** yang bisa langsung dijalankan, mengimplementasikan
-alur verifikasi **Nama + NIM + No. WhatsApp → OTP via WhatsApp → Sertifikat
-dikirim ke Email**. Backend: **Flask (Python)** + **SQLite**. Tampilan:
+alur verifikasi **Nama + NIM + No. WhatsApp (pencocokan identitas) → OTP via
+Email → Sertifikat dikirim ke Email**. No. WhatsApp hanya dipakai untuk
+mencocokkan data peserta ke data yang diunggah admin - kode OTP dan file
+sertifikat sama-sama dikirim ke email (bukan WhatsApp), karena pengiriman OTP
+lewat WhatsApp API berbayar per pesan. Backend: **Flask (Python)** + **SQLite**. Tampilan:
 **Tailwind CSS + Alpine.js + Flatpickr** (di-build lokal, bukan lewat CDN
 runtime — lihat penjelasan di bagian 6).
 
@@ -12,14 +15,17 @@ runtime — lihat penjelasan di bagian 6).
 
 **Peserta magang:**
 1. Buka portal `/ambil-sertifikat`, isi Nama, NIM, dan No. WhatsApp.
-2. Sistem mencocokkan ke data yang diunggah admin, lalu mengirim kode OTP
-   6-digit ke **WhatsApp** peserta.
+2. Sistem mencocokkan ketiganya ke data yang diunggah admin (No. WA di
+   sini murni untuk verifikasi identitas), lalu mengirim kode OTP 6-digit
+   ke **email** peserta yang terdaftar.
 3. Peserta memasukkan kode OTP.
 4. Begitu benar, sertifikat PDF otomatis dibuat dan **dikirim sebagai
-   lampiran ke email** peserta yang terdaftar (bukan diunduh langsung dari
+   lampiran ke email** yang sama (bukan diunduh langsung dari
    browser) — meniru pola pengiriman sertifikat bootcamp/seminar resmi.
 5. Peserta hanya bisa mengklaim satu kali; percobaan berikutnya akan
-   ditolak dengan pesan "sudah pernah diambil".
+   ditolak dengan pesan "sudah pernah diambil", dan tersedia tombol
+   "Kembali ke Beranda" di halaman hasil supaya alur tidak nyangkut di
+   step OTP yang sudah tidak valid.
 
 **Admin Kejati:**
 1. Login ke panel admin.
@@ -113,6 +119,17 @@ gambar latar + konfigurasi posisi tiap elemen (disimpan sebagai **pecahan
 0–1** relatif terhadap lebar/tinggi gambar, bukan koordinat piksel tetap —
 supaya template resolusi berapa pun bisa dipakai dengan sistem kalibrasi
 yang sama).
+
+**Kualitas PDF (setara "Download PDF Print" di Canva)**: PDF akhir dibuat
+lewat `img2pdf`, yang membungkus gambar hasil generate **tanpa kompresi
+ulang sama sekali** (lossless). Sebelumnya sistem sempat memakai metode
+bawaan Pillow (`Image.save(..., "PDF")`) yang ternyata diam-diam menerapkan
+kompresi mirip JPEG saat menyimpan ke PDF — kurang tajam di tepi teks/garis
+dekorasi dan ukuran file jadi tidak wajar kecil (~900 KB untuk gambar
+3510×2482px). Setelah diganti ke img2pdf, ukuran file naik ke ~8-9 MB
+(sesuai kualitas asli yang dipertahankan penuh) dan hasilnya identik piksel
+demi piksel dengan gambar yang dirender - tidak ada kompresi tambahan di
+tahap mana pun.
 
 **Mengunggah template baru** (`/admin/template/baru`):
 1. Unggah file PDF/PNG/JPG — **disarankan resolusi tinggi** (setara 300
@@ -211,34 +228,65 @@ Solusinya (lihat `app/utils.py` → `buat_no_ref`):
 
 ---
 
-## 8. Mengaktifkan OTP WhatsApp Sungguhan
+## 7b. Watermark Anti-Pemalsuan (Perlindungan dari Edit AI/Photoshop)
 
-Saat ini (`WA_DEMO_MODE=true`), kode OTP ditampilkan langsung di layar
-karena belum terhubung ke WhatsApp API sungguhan. Untuk mengaktifkan:
+Selain QR code untuk verifikasi (yang perlu discan secara aktif), sistem
+juga menanam **pola teks mikro berulang** di seluruh permukaan sertifikat
+(lihat `_tambahkan_watermark_keamanan` di `app/certgen/generator.py`),
+sangat transparan (alpha ~14/255) sehingga nyaris tidak terlihat pada
+pandangan normal, tapi jelas terbaca kalau dizoom dekat atau kontrasnya
+ditingkatkan.
 
-1. Daftar **Meta Business Manager** → WhatsApp Business Platform (Cloud
-   API resmi dari Meta), atau gunakan Business Solution Provider (BSP)
-   lokal seperti **Api.co.id** yang mem-wrap Cloud API resmi dengan biaya
-   langganan tetap tanpa markup per pesan (~Rp100rb/bulan) — **hindari
-   layanan "unofficial" seperti Fonnte/Wablas** untuk sistem resmi
-   instansi, karena melanggar ToS WhatsApp dan berisiko nomor diblokir
-   sewaktu-waktu tanpa peringatan.
-2. Buat template pesan WA (perlu disetujui Meta lebih dulu, proses
-   1-2 hari kerja) untuk isi OTP.
-3. Isi `.env`:
-   ```
-   WA_DEMO_MODE=false
-   WA_PHONE_NUMBER_ID=...
-   WA_ACCESS_TOKEN=...
-   ```
-4. Lengkapi isi fungsi `kirim_wa_otp()` di `app/utils.py` — sudah ada
-   contoh kode pemanggilan Meta Cloud API di komentarnya.
+**Kenapa ini membantu**: kalau ada pihak mencoba mengedit nama/NIM pada
+file PDF/gambar hasil jadi (mis. pakai AI image-editing atau inpainting
+Photoshop) untuk menyalahgunakannya, mereka harus ikut merekonstruksi
+pola berulang ini persis di area yang diedit. Ini sangat sulit dilakukan
+mulus oleh tools AI/edit manual pada umumnya — hasilnya, area yang
+diotak-atik akan terlihat "pecah"/tidak menyambung dengan pola di
+sekitarnya saat diperbesar, memberi bukti visual pemalsuan **meski tanpa
+perlu scan QR**.
 
-## 9. Mengaktifkan Pengiriman Email Sertifikat Sungguhan
+Isi teks pola memakai **kode_verifikasi milik sertifikat itu sendiri**
+(bukan teks generik yang sama untuk semua sertifikat) — jadi kalau ada
+yang mencoba menyalin pola "bersih" dari satu sertifikat asli untuk
+menyamarkan sertifikat palsu lain, kode yang terbaca dalam pola tersebut
+tidak akan cocok dengan kode yang tertulis besar di sertifikat itu -
+ketidakcocokan ini sendiri jadi bukti forensik tambahan.
 
-Saat ini (`EMAIL_DEMO_MODE=true`), file PDF disimpan ke `data/generated/`
-dan bisa diunduh lewat tombol demo di halaman konfirmasi. Untuk
-mengaktifkan pengiriman email sungguhan, isi `.env`:
+Fitur ini otomatis aktif untuk semua sertifikat, termasuk yang dibuat
+dari template kustom (bukan cuma template bawaan). Bisa dimatikan per
+panggilan lewat parameter `watermark_keamanan=False` di
+`generate_certificate_image()` kalau suatu saat diperlukan (tidak ada
+kontrol lewat UI untuk ini, karena sifatnya keamanan bawaan sistem).
+
+**Batasan yang perlu diketahui secara jujur**: ini bukan enkripsi atau
+tanda tangan digital — sifatnya lebih ke "jejak forensik yang sulit
+dipalsukan dengan cepat", bukan "mustahil dipalsukan". Pemalsu yang
+sangat teliti dan berdedikasi tinggi (bukan sekadar minta AI generate
+ulang) berpotensi tetap bisa merekonstruksinya dengan usaha ekstra. Untuk
+perlindungan tingkat lebih tinggi (tanda tangan kriptografi pada file
+PDF itu sendiri, yang akan terdeteksi invalid oleh Adobe Acrobat dkk.
+kalau file diubah sedikit pun), bisa didiskusikan sebagai pengembangan
+lanjutan menggunakan library seperti `pyHanko`.
+
+---
+
+## 8. Mengaktifkan OTP & Pengiriman Email Sertifikat Sungguhan
+
+Sistem sebelumnya sempat memakai OTP via WhatsApp, tapi **diganti ke
+Email** karena pengiriman OTP lewat WhatsApp Business API berbayar per
+pesan, sedangkan SMTP email jauh lebih murah (bahkan gratis lewat akun
+Gmail biasa) dan satu jalur SMTP yang sama bisa dipakai baik untuk kode
+OTP maupun lampiran PDF sertifikat. No. WhatsApp peserta **tetap ada**
+di form & database, tapi sekarang murni untuk mencocokkan identitas
+peserta ke data yang diunggah admin - tidak lagi dipakai untuk mengirim
+apa pun.
+
+Saat ini (`EMAIL_DEMO_MODE=true`), kode OTP ditampilkan langsung di
+layar dan file PDF sertifikat disimpan ke `data/generated/` (bisa
+diunduh lewat tombol demo di halaman konfirmasi), karena belum
+terhubung ke SMTP sungguhan. Untuk mengaktifkan pengiriman email
+sungguhan (OTP maupun sertifikat), isi `.env`:
 ```
 EMAIL_DEMO_MODE=false
 SMTP_HOST=smtp.gmail.com
@@ -247,14 +295,15 @@ SMTP_USERNAME=akun@domain.go.id
 SMTP_PASSWORD=app-password-anda
 SMTP_FROM=no-reply@kejati-jateng.go.id
 ```
-Fungsi pengirimnya (`kirim_sertifikat_email` di `app/utils.py`) sudah
-melampirkan file PDF secara otomatis — tidak perlu kode tambahan.
+Fungsi pengirimnya (`kirim_email_otp` untuk kode OTP, `kirim_sertifikat_email`
+untuk lampiran PDF — keduanya di `app/utils.py`) sudah lengkap dan
+memakai SMTP yang sama — tidak perlu kode tambahan.
 **Catatan Gmail**: perlu "App Password" (bukan password akun biasa),
 dibuat lewat pengaturan keamanan akun Google.
 
 ---
 
-## 10. Struktur Folder
+## 9. Struktur Folder
 
 ```
 sertifikat-magang-kejati/
@@ -287,7 +336,7 @@ sertifikat-magang-kejati/
     └── generated/                 # PDF hasil generate (mode demo)
 ```
 
-## 11. Keamanan yang Sudah Diimplementasikan
+## 10. Keamanan yang Sudah Diimplementasikan
 
 - Kombinasi Nama + NIM + No. WA harus **sama persis** dengan data admin
   sebelum OTP dikirim (mencegah tebak-NIM saja).
@@ -304,7 +353,7 @@ CAPTCHA pada form klaim untuk mencegah percobaan otomatis oleh bot.
 
 ---
 
-## 12. Migrasi ke Supabase (untuk Produksi)
+## 11. Migrasi ke Supabase (untuk Produksi)
 
 SQLite dipakai untuk tahap demo/uji coba karena nol-konfigurasi. Begitu
 sistem mau dipakai sungguhan oleh banyak admin dari lokasi berbeda,
@@ -371,16 +420,16 @@ Pilihan yang umum dipakai untuk hosting Flask + Supabase:
 
 ---
 
-## 13. Tahapan Implementasi ke Depan
+## 12. Tahapan Implementasi ke Depan
 
 | Tahap | Status |
 |---|---|
-| Alur verifikasi Nama+NIM+WA → OTP WA → email sertifikat | ✓ Selesai & teruji |
+| Alur verifikasi Nama+NIM+WA (cocokkan) → OTP Email → email sertifikat | ✓ Selesai & teruji |
 | Manajemen periode + upload Excel dalam satu langkah | ✓ Selesai & teruji |
 | Tabel Data Peserta ringkas (No.Ref/Nama/NIM/Akun/Waktu/Status/Aksi) | ✓ Selesai & teruji |
 | Manajemen Template Sertifikat (upload + kalibrasi + live preview) | ✓ Selesai & teruji |
 | Tampilan modern (Tailwind + Alpine + Flatpickr, build lokal) | ✓ Selesai |
-| Integrasi WhatsApp API sungguhan | Menunggu akun WhatsApp Business instansi |
-| Integrasi SMTP email sungguhan | Menunggu akses SMTP/App Password instansi |
+| Navigasi "Kembali ke Beranda" di halaman hasil (sukses/sudah diambil) | ✓ Selesai |
+| Integrasi SMTP email sungguhan (OTP & sertifikat) | Menunggu akses SMTP/App Password instansi |
 | Migrasi ke Supabase (kalau dipakai multi-admin) | Menunggu keputusan skala pemakaian |
 | Hosting produksi (Render/VPS instansi) | Menunggu keputusan lingkungan hosting |

@@ -23,20 +23,19 @@ class Config:
     ADMIN_USERNAME = os.environ.get("ADMIN_USERNAME", "admin")
     ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "admin123")
 
-    # --- OTP dikirim via WhatsApp ---
-    # MODE DEMO: kode OTP ditampilkan langsung di layar (tanpa WA API asli)
-    # supaya sistem bisa dicoba tanpa akun WhatsApp Business.
-    WA_DEMO_MODE = os.environ.get("WA_DEMO_MODE", "true").lower() == "true"
+    # --- OTP & Sertifikat dikirim via Email ---
+    # Nama + NIM + No. WA tetap dipakai untuk MENCOCOKKAN identitas peserta
+    # ke data yang diunggah admin (No. WA tidak dipakai untuk mengirim apa
+    # pun lagi). Setelah cocok, kode OTP dikirim ke EMAIL peserta yang
+    # terdaftar; begitu OTP benar, sertifikat PDF juga dikirim ke email yang
+    # sama. Ini menggantikan skema lama (OTP via WhatsApp) karena pengiriman
+    # OTP lewat WhatsApp API berbayar per pesan.
+    # MODE DEMO: email tidak benar-benar terkirim; kode OTP ditampilkan
+    # langsung di layar dan file PDF sertifikat disimpan ke data/generated/
+    # supaya hasilnya tetap bisa diperiksa tanpa SMTP asli.
+    EMAIL_DEMO_MODE = os.environ.get("EMAIL_DEMO_MODE", "true").lower() == "true"
     OTP_EXPIRY_MINUTES = 5
     OTP_MAX_ATTEMPTS = 5
-
-    WA_PHONE_NUMBER_ID = os.environ.get("WA_PHONE_NUMBER_ID", "")
-    WA_ACCESS_TOKEN = os.environ.get("WA_ACCESS_TOKEN", "")
-
-    # --- Sertifikat dikirim via Email (setelah OTP WA berhasil) ---
-    # MODE DEMO: email tidak benar-benar terkirim; file PDF disimpan ke
-    # data/generated/ supaya hasilnya tetap bisa diperiksa.
-    EMAIL_DEMO_MODE = os.environ.get("EMAIL_DEMO_MODE", "true").lower() == "true"
 
     SMTP_HOST = os.environ.get("SMTP_HOST", "")
     SMTP_PORT = int(os.environ.get("SMTP_PORT", "587"))

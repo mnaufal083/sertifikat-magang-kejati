@@ -57,6 +57,12 @@ DEFAULT_FIELD_CONFIG = {
         "size": 0.02018, "tracking": 0.00273,
         "color": "#5e4426",
     },
+    "tanggal": {
+        "x": 0.5, "y": 0.6844,
+        "size": 0.01800,
+        "color": "#5e4426",
+        "tampilkan": True,
+    },
     "nomor": {
         "x": 0.9235, "y1": 0.0302, "y2": 0.0504,
         "size": 0.01068, "align": "right",
@@ -124,23 +130,98 @@ def _draw_centered_label_value(draw, label, value, font_label, font_value, cx, c
     _draw_tracked(draw, (x_start + lw, vy), value, font_value, fill, tracking_px)
 
 
+def _tambahkan_watermark_keamanan(im, teks, warna_dasar="#4a3728"):
+    """Tanam pola teks mikro berulang (tiled, diagonal, sangat transparan)
+    di seluruh permukaan sertifikat sebagai penanda anti-pemalsuan.
+
+    Kenapa ini membantu: kalau ada pihak mencoba mengedit nama/NIM di
+    file hasil jadi (mis. pakai AI image-editing/inpainting) untuk
+    menyalahgunakannya, mereka harus ikut merekonstruksi pola berulang
+    ini persis di area yang diedit - sesuatu yang sangat sulit dilakukan
+    mulus oleh tools AI/edit manual, sehingga area yang diotak-atik akan
+    terlihat "pecah"/tidak menyambung dengan pola di sekitarnya saat
+    diperbesar (zoom), meski tanpa perlu scan QR code.
+
+    Isi teks memakai kode_verifikasi milik sertifikat itu sendiri (bukan
+    teks generik yang sama untuk semua sertifikat) - supaya pola ini juga
+    berfungsi sebagai penanda forensik yang unik per sertifikat.
+    """
+    W, H = im.size
+    layer = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    draw_layer = ImageDraw.Draw(layer)
+
+    font_size = max(int(W * 0.0068), 10)
+    font = _load_font(FONT_REG_DEFAULT, font_size)
+
+    r, g, b = tuple(int(warna_dasar.lstrip("#")[i:i + 2], 16) for i in (0, 2, 4))
+    alpha = 14  # dari 255 - sangat halus, hampir tak terlihat di pandangan sekilas
+
+    label = f"  ASLI \u2022 KEJATI JATENG \u2022 {teks}  "
+    bbox = draw_layer.textbbox((0, 0), label, font=font)
+    tile_w = (bbox[2] - bbox[0]) + int(font_size * 2)
+    tile_h = int(font_size * 3.2)
+
+    # Kanvas kerja diperbesar (diagonal) supaya setelah dirotasi & dipotong
+    # kembali ke ukuran asli, tetap penuh menutupi seluruh sertifikat
+    diag = int((W ** 2 + H ** 2) ** 0.5) + tile_h * 2
+    pattern = Image.new("RGBA", (diag, diag), (0, 0, 0, 0))
+    draw_pattern = ImageDraw.Draw(pattern)
+    y = 0
+    baris = 0
+    while y < diag:
+        offset_x = (tile_w // 2) if baris % 2 else 0
+        x = -tile_w + offset_x
+        while x < diag:
+            draw_pattern.text((x, y), label, font=font, fill=(r, g, b, alpha))
+            x += tile_w
+        y += tile_h
+        baris += 1
+
+    pattern = pattern.rotate(28, expand=False, resample=Image.BICUBIC)
+    left = (diag - W) // 2
+    top = (diag - H) // 2
+    pattern_crop = pattern.crop((left, top, left + W, top + H))
+
+    im_rgba = im.convert("RGBA")
+    hasil = Image.alpha_composite(im_rgba, pattern_crop)
+    return hasil.convert("RGB")
+
+
 def generate_certificate_image(preview_path, field_config, nama, nim, fakultas, universitas,
                                 no_sertifikat, kode_verifikasi, verify_url,
-                                font_nama_path=None, font_bold_path=None, font_reg_path=None):
+                                tanggal_terbit=None,
+                                font_nama_path=None, font_bold_path=None, font_reg_path=None,
+                                font_tanggal_path=None,
+                                watermark_keamanan=True):
     """Render satu sertifikat lengkap dan kembalikan PIL.Image (RGB).
 
     preview_path   : path gambar latar bersih template (PNG resolusi tinggi)
     field_config    : dict konfigurasi posisi (lihat DEFAULT_FIELD_CONFIG),
                        biasanya dari TemplateSertifikat.get_field_config()
+    tanggal_terbit  : teks tanggal yang SUDAH diformat (mis. "30 Agustus
+                       2026" - lihat utils.format_tanggal_indonesia).
+                       Otomatis mengikuti tanggal_selesai periode magang
+                       peserta, bukan bagian tetap dari desain template -
+                       jadi kalau periode berikutnya beda tanggal, tidak
+                       perlu bikin/unggah ulang template. None/kosong =
+                       field ini tidak digambar sama sekali.
     font_*_path     : path font kustom milik template ybs; None = pakai bawaan
+    watermark_keamanan : True = tanam pola anti-pemalsuan (lihat
+                       _tambahkan_watermark_keamanan) sebelum teks
+                       dinamis ditempel. Default aktif.
     """
     im = Image.open(preview_path).convert("RGB")
     W, H = im.size
+
+    if watermark_keamanan:
+        im = _tambahkan_watermark_keamanan(im, kode_verifikasi)
+
     draw = ImageDraw.Draw(im)
 
     f_nama_path = font_nama_path or FONT_NAME_DEFAULT
     f_bold_path = font_bold_path or FONT_BOLD_DEFAULT
     f_reg_path = font_reg_path or FONT_REG_DEFAULT
+    f_tanggal_path = font_tanggal_path or FONT_REG_DEFAULT
 
     cfg = field_config
 
@@ -178,6 +259,16 @@ def generate_certificate_image(preview_path, field_config, nama, nim, fakultas, 
         _draw_centered_label_value(draw, label, value, f_bold, f_reg,
                                     fc["x"] * W, fc["y"] * H, fc["color"], tracking_px)
 
+    # --- Tanggal terbit (dinamis, mengikuti tanggal_selesai periode - lihat
+    # docstring param tanggal_terbit di atas). Field opsional: kalau
+    # template lama belum punya konfigurasi "tanggal" sama sekali (dibuat
+    # sebelum fitur ini ada), cfg.get() akan None dan baris ini dilewati
+    # tanpa error. ---
+    tc = cfg.get("tanggal")
+    if tc and tc.get("tampilkan", True) and tanggal_terbit:
+        f_tanggal = _load_font(f_tanggal_path, tc["size"] * W)
+        _draw_centered_line(draw, tanggal_terbit, f_tanggal, tc["x"] * W, tc["y"] * H, tc["color"])
+
     # --- Nomor sertifikat + kode verifikasi (opsional - template resmi
     # Kejati Jateng tidak punya field nomor surat pada desainnya, jadi
     # secara default TIDAK ditampilkan; nomor & kode tetap tersimpan di
@@ -203,8 +294,9 @@ def generate_certificate_image(preview_path, field_config, nama, nim, fakultas, 
         qr_size = int(qc["size"] * W)
         qr_img = qr_img.resize((qr_size, qr_size))
         im.paste(qr_img, (int(qc["x"] * W), int(qc["y"] * H)), qr_img)
-        f_tiny = _load_font(f_reg_path, qc["label_size"] * W)
-        draw.text((qc["x"] * W, qc["label_y"] * H), "Scan untuk verifikasi", font=f_tiny, fill=qc["color"])
+        # Catatan: caption "Scan untuk verifikasi" di bawah QR sengaja
+        # dihapus (permintaan desain) - QR code dibiarkan berdiri sendiri
+        # tanpa label teks tambahan.
 
     return im
 

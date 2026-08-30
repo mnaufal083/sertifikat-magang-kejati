@@ -5,7 +5,9 @@ Skema database v2 - disederhanakan sesuai penyesuaian:
 
   - Peserta tidak lagi punya token/link personal. Verifikasi memakai
     kombinasi Nama + NIM + No. WhatsApp yang dicocokkan ke data yang
-    diunggah admin, lalu OTP dikirim ke WhatsApp tersebut.
+    diunggah admin, lalu OTP dikirim ke EMAIL peserta yang terdaftar
+    (No. WA hanya dipakai untuk mencocokkan identitas, bukan untuk
+    mengirim apa pun - lihat app/utils.py).
   - Nomor referensi (No. Ref / nomor sertifikat) & kode verifikasi
     dibuat sekali saat data diunggah admin, bukan menunggu peserta klaim
     - supaya "No. Ref" selalu terlihat di tabel admin sejak awal.
@@ -41,10 +43,12 @@ class TemplateSertifikat(db.Model):
     preview_path = db.Column(db.String(300), nullable=False)
 
     # Font kustom (opsional). Kalau kosong, sistem memakai font bawaan
-    # (PinyonScript untuk nama, Cardo Bold/Regular untuk identitas).
+    # (PinyonScript untuk nama, Cardo Bold/Regular untuk identitas,
+    # Cardo Regular untuk tanggal terbit).
     font_nama_path = db.Column(db.String(300), nullable=True)
     font_bold_path = db.Column(db.String(300), nullable=True)
     font_reg_path = db.Column(db.String(300), nullable=True)
+    font_tanggal_path = db.Column(db.String(300), nullable=True)
 
     # Konfigurasi posisi tiap field, disimpan sebagai JSON text. Semua
     # posisi & ukuran disimpan sebagai PECAHAN (0.0-1.0) relatif terhadap
@@ -131,8 +135,8 @@ class OtpCode(db.Model):
     terpakai = db.Column(db.Boolean, default=False)
     percobaan_gagal = db.Column(db.Integer, default=0)
 
-    # Hanya diisi & ditampilkan saat WA_DEMO_MODE=True, supaya sistem bisa
-    # dicoba tanpa akun WhatsApp API sungguhan.
+    # Hanya diisi & ditampilkan saat EMAIL_DEMO_MODE=True, supaya sistem
+    # bisa dicoba tanpa SMTP sungguhan.
     kode_plain_demo = db.Column(db.String(10), nullable=True)
 
     def set_kode(self, kode):

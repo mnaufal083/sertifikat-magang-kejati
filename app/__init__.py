@@ -10,6 +10,9 @@ def create_app(config_class=Config):
 
     db.init_app(app)
 
+    from app.utils import ke_wib
+    app.jinja_env.filters["wib"] = ke_wib
+
     from app.routes_admin import admin_bp
     from app.routes_public import public_bp
     app.register_blueprint(admin_bp)

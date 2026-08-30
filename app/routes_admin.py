@@ -33,7 +33,7 @@ from werkzeug.utils import secure_filename
 from app.extensions import db
 from app.models import Periode, Peserta, TemplateSertifikat
 from app.auth import admin_required
-from app.utils import baca_excel_peserta, proses_upload_peserta
+from app.utils import baca_excel_peserta, proses_upload_peserta, cek_kode_verifikasi
 from app.certgen.generator import generate_certificate_image, DEFAULT_FIELD_CONFIG
 
 admin_bp = Blueprint("admin", __name__, url_prefix="/admin")
@@ -105,20 +105,36 @@ def periode_baru():
         aktif=True,
     )
     db.session.add(periode)
-    db.session.commit()
 
     file_excel = request.files.get("file_excel")
     if file_excel and file_excel.filename:
+        # PENTING: periode belum di-commit sampai titik ini. flush() dipakai
+        # supaya periode.id tersedia (dibutuhkan relasi peserta) TANPA
+        # menyimpannya permanen. Kalau proses upload Excel gagal di bawah -
+        # baik karena file-nya sendiri bermasalah maupun error sistem lain -
+        # seluruh transaksi (termasuk periode yang baru dibuat) di-rollback,
+        # supaya tidak ada lagi "periode kosong" yang menumpuk tiap kali
+        # admin mencoba ulang upload yang gagal (lihat riwayat perbaikan bug
+        # No.Ref duplikat).
         try:
+            db.session.flush()
             data_rows = baca_excel_peserta(file_excel)
-            ditambahkan, dilewati = proses_upload_peserta(periode, data_rows)
+            ditambahkan, dilewati = proses_upload_peserta(periode, data_rows, commit=False)
+            db.session.commit()
             pesan = f"Periode '{nama}' dibuat dengan {ditambahkan} peserta."
             if dilewati:
                 pesan += f" ({dilewati} baris dilewati karena NIM sudah ada)"
             flash(pesan, "success")
         except ValueError as e:
-            flash(f"Periode '{nama}' dibuat, tapi upload Excel gagal: {e}", "error")
+            db.session.rollback()
+            flash(f"Gagal membuat periode: {e} Periode belum tersimpan - silakan perbaiki file Excel-nya dan coba lagi.", "error")
+            return redirect(url_for("admin.periode_baru"))
+        except Exception as e:
+            db.session.rollback()
+            flash(f"Gagal membuat periode karena kesalahan sistem ({e}). Periode belum tersimpan - silakan coba lagi.", "error")
+            return redirect(url_for("admin.periode_baru"))
     else:
+        db.session.commit()
         flash(f"Periode '{nama}' dibuat. Belum ada data peserta - unggah lewat halaman detail periode.", "success")
 
     return redirect(url_for("admin.periode_detail", periode_id=periode.id))
@@ -161,7 +177,11 @@ def upload_tambahan(periode_id):
             pesan += f" ({dilewati} baris dilewati karena NIM sudah ada di periode ini)"
         flash(pesan, "success")
     except ValueError as e:
+        db.session.rollback()
         flash(f"Upload gagal: {e}", "error")
+    except Exception as e:
+        db.session.rollback()
+        flash(f"Upload gagal karena kesalahan sistem ({e}). Silakan coba lagi.", "error")
 
     return redirect(url_for("admin.periode_detail", periode_id=periode_id))
 
@@ -169,17 +189,58 @@ def upload_tambahan(periode_id):
 @admin_bp.route("/periode/<int:periode_id>/edit", methods=["POST"])
 @admin_required
 def periode_edit(periode_id):
+    """Panel 'Pengaturan Periode' berisi Nama Periode, Tanggal Terbit
+    Sertifikat, & Template Sertifikat - tiga field yang benar-benar
+    berdampak:
+      - Nama: supaya typo saat membuat periode tidak harus hapus-buat-ulang.
+      - Tanggal Terbit (kolom tanggal_selesai): DICETAK LANGSUNG di
+        sertifikat lewat field dinamis "tanggal" (lihat certgen/
+        generator.py & format_tanggal_indonesia di utils.py) - jadi
+        field ini sempat dihapus dari panel saat masih dianggap murni
+        kosmetik, sekarang dikembalikan karena sudah punya fungsi nyata.
+      - Template: supaya admin bisa ganti desain untuk sisa peserta yang
+        belum mengambil, tanpa mengubah PDF yang sudah terkirim.
+    Tanggal Mulai TIDAK dikembalikan ke panel ini (tetap tersimpan &
+    tampil di kartu periode, cuma memang tidak dipakai logika apa pun
+    sampai saat ini) - kalau nanti ternyata dibutuhkan juga, tinggal
+    ditambahkan dengan pola yang sama."""
     periode = Periode.query.get_or_404(periode_id)
     periode.nama_periode = request.form.get("nama_periode", periode.nama_periode).strip()
-    tgl_mulai = request.form.get("tanggal_mulai") or None
-    tgl_selesai = request.form.get("tanggal_selesai") or None
+    tgl_terbit = request.form.get("tanggal_terbit") or None
+    periode.tanggal_selesai = datetime.strptime(tgl_terbit, "%Y-%m-%d").date() if tgl_terbit else None
     template_id = request.form.get("template_id") or None
-    periode.tanggal_mulai = datetime.strptime(tgl_mulai, "%Y-%m-%d").date() if tgl_mulai else None
-    periode.tanggal_selesai = datetime.strptime(tgl_selesai, "%Y-%m-%d").date() if tgl_selesai else None
     periode.template_id = int(template_id) if template_id else None
     db.session.commit()
     flash("Pengaturan periode diperbarui.", "success")
     return redirect(url_for("admin.periode_detail", periode_id=periode_id))
+
+
+@admin_bp.route("/periode/<int:periode_id>/hapus", methods=["POST"])
+@admin_required
+def periode_hapus(periode_id):
+    """Hapus periode beserta seluruh data peserta di dalamnya (cascade -
+    lihat relationship Periode.peserta di models.py). Dipakai terutama
+    untuk membersihkan periode kosong/gagal (mis. sisa dari upload Excel
+    yang dulu gagal sebelum bug penomoran No.Ref diperbaiki)."""
+    periode = Periode.query.get_or_404(periode_id)
+    nama = periode.nama_periode
+    jumlah_peserta = len(periode.peserta)
+    db.session.delete(periode)
+    db.session.commit()
+    flash(f"Periode '{nama}' beserta {jumlah_peserta} data peserta di dalamnya sudah dihapus.", "success")
+    return redirect(url_for("admin.periode_list"))
+
+
+@admin_bp.route("/cek-sertifikat")
+@admin_required
+def cek_sertifikat_cepat():
+    """Endpoint JSON untuk quick-action 'Cek Keaslian Sertifikat' yang
+    muncul sebagai pop-up di dashboard admin (lihat base_admin.html).
+    Memakai logika yang sama persis dengan halaman publik /cek-sertifikat
+    lewat helper cek_kode_verifikasi() supaya hasilnya selalu konsisten."""
+    kode = request.args.get("kode", "").strip()
+    hasil = cek_kode_verifikasi(kode)
+    return jsonify(hasil or {"valid": False})
 
 
 @admin_bp.route("/peserta/<int:peserta_id>/reset", methods=["POST"])
@@ -357,12 +418,21 @@ def template_baru():
             f"bisa dipakai.", "error"
         )
 
-    # Font kustom (opsional)
+    # Font kustom (opsional). Form sekarang cuma minta 3 file (Nama,
+    # Identitas, Tanggal) - "Identitas" dipakai untuk font_bold_path
+    # (label mis. "NIM :") maupun font_reg_path (isian mis. "2305110041")
+    # SEKALIGUS, karena di desain resmi Kejati Jateng keduanya memang
+    # font yang sama; menyimpannya di 2 kolom terpisah tetap dipertahankan
+    # di database supaya template lama yang sudah terlanjur pakai font
+    # label & nilai BERBEDA tidak rusak (tidak ada field di form baru
+    # untuk mengatur itu lagi, tapi datanya tidak dihapus).
     os.makedirs(current_app.config["UPLOAD_FONT_DIR"], exist_ok=True)
     font_paths = {}
-    for field_name, form_key in [("font_nama_path", "font_nama"),
-                                  ("font_bold_path", "font_bold"),
-                                  ("font_reg_path", "font_reg")]:
+    for form_key, target_fields in [
+        ("font_nama", ["font_nama_path"]),
+        ("font_identitas", ["font_bold_path", "font_reg_path"]),
+        ("font_tanggal", ["font_tanggal_path"]),
+    ]:
         f = request.files.get(form_key)
         if f and f.filename:
             if not _ext_ok(f.filename, ALLOWED_FONT_EXT):
@@ -371,7 +441,8 @@ def template_baru():
             fn = secure_filename(f.filename)
             fpath = os.path.join(current_app.config["UPLOAD_FONT_DIR"], f"{stamp}_{fn}")
             f.save(fpath)
-            font_paths[field_name] = fpath
+            for target in target_fields:
+                font_paths[target] = fpath
 
     tpl = TemplateSertifikat(
         nama_template=nama,
@@ -379,6 +450,7 @@ def template_baru():
         font_nama_path=font_paths.get("font_nama_path"),
         font_bold_path=font_paths.get("font_bold_path"),
         font_reg_path=font_paths.get("font_reg_path"),
+        font_tanggal_path=font_paths.get("font_tanggal_path"),
         aktif=True,
     )
     tpl.set_field_config(DEFAULT_FIELD_CONFIG)
@@ -467,7 +539,13 @@ def template_deteksi_ulang(template_id):
 @admin_required
 def template_kalibrasi(template_id):
     tpl = TemplateSertifikat.query.get_or_404(template_id)
-    return render_template("admin/template_kalibrasi.html", tpl=tpl, config=tpl.get_field_config())
+    config = tpl.get_field_config()
+    # Template yang dibuat sebelum fitur "Tanggal Terbit" ada belum punya
+    # key "tanggal" di field_config_json tersimpannya - isi dengan nilai
+    # bawaan supaya form kalibrasi tetap tampil normal (bisa langsung
+    # disesuaikan posisinya), bukan kosong/error.
+    config.setdefault("tanggal", DEFAULT_FIELD_CONFIG["tanggal"])
+    return render_template("admin/template_kalibrasi.html", tpl=tpl, config=config)
 
 
 @admin_bp.route("/template/<int:template_id>/kalibrasi/simpan", methods=["POST"])
@@ -495,7 +573,9 @@ def template_kalibrasi_preview(template_id):
         fakultas="Contoh Fakultas", universitas="Contoh Universitas Perguruan Tinggi",
         no_sertifikat="001/CONTOH/VIII/2026", kode_verifikasi="KT26-CONTOH",
         verify_url="http://127.0.0.1:5000/cek-sertifikat?kode=KT26-CONTOH",
+        tanggal_terbit="30 Agustus 2026",
         font_nama_path=tpl.font_nama_path, font_bold_path=tpl.font_bold_path, font_reg_path=tpl.font_reg_path,
+        font_tanggal_path=tpl.font_tanggal_path,
     )
     buf = io.BytesIO()
     im.save(buf, "JPEG", quality=85)

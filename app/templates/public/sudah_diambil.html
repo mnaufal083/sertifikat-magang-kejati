@@ -7,12 +7,17 @@
     <h1 class="text-lg font-bold text-stone-800 mb-2">Sertifikat Sudah Diambil</h1>
     <p class="text-sm text-stone-500 mb-2">
       Data atas nama <strong>{{ peserta.nama }}</strong> sudah pernah dikirimi sertifikat
-      pada {{ peserta.waktu_diambil.strftime('%d %B %Y, %H:%M') if peserta.waktu_diambil else '-' }}.
+      pada {{ (peserta.waktu_diambil | wib).strftime('%d %B %Y, %H:%M') if peserta.waktu_diambil else '-' }}.
     </p>
     <p class="text-sm text-stone-500">
       Periksa kembali email <strong>{{ peserta.email }}</strong>. Jika file tidak ditemukan,
       hubungi Bidang Pembinaan Kejaksaan Tinggi Jawa Tengah.
     </p>
+
+    <a href="{{ url_for('public.ambil_sertifikat') }}"
+       class="mt-6 inline-block w-full text-center bg-stone-100 hover:bg-stone-200 text-stone-700 font-medium py-3 rounded-lg transition">
+      ← Kembali ke Beranda
+    </a>
   </div>
 </div>
 {% endblock %}

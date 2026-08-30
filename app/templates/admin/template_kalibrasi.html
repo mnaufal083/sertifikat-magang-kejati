@@ -4,16 +4,18 @@
 <a href="{{ url_for('admin.template_list') }}" class="text-sm text-stone-500 hover:text-brand-600">← Kembali ke Template Sertifikat</a>
 <h1 class="text-2xl font-bold text-stone-800 mt-2 mb-1">Kalibrasi Posisi — {{ tpl.nama_template }}</h1>
 <p class="text-stone-500 text-sm mb-3">
-  Atur posisi & ukuran tiap elemen di bawah, lalu klik <strong>"Render Uji Coba"</strong> untuk melihat
-  hasilnya dengan data contoh sebelum disimpan. Semua nilai posisi berupa pecahan
-  0–1 relatif terhadap lebar/tinggi gambar (0.5 = tengah, 0 = kiri/atas, 1 = kanan/bawah).
+  <strong>Seret langsung kotak berlabel</strong> di atas pratinjau untuk mengatur posisi —
+  garis ungu akan muncul kalau sejajar tengah halaman. Angka di panel kiri
+  ikut berubah otomatis, atau bisa diketik manual untuk presisi. Klik
+  <strong>"Render Uji Coba"</strong> untuk melihat hasil sebenarnya dengan
+  font & teks asli sebelum disimpan.
 </p>
 <div class="mb-4 rounded-lg bg-brand-50 border border-brand-100 px-4 py-3 text-xs text-brand-800 flex gap-2">
   <span>ℹ</span>
   <span>Kalau file desain masih menyertakan teks label (Nama Mahasiswa/NIM/Fakultas/Universitas)
   seperti placeholder, coba tombol deteksi otomatis di bawah ini dulu. Field yang tidak
-  terdeteksi (atau kalau desainnya sudah polos dari awal) tetap bisa diatur manual lewat
-  angka-angka di bawah — hasilnya sama saja setelah tersimpan.</span>
+  terdeteksi (atau kalau desainnya sudah polos dari awal) tetap bisa diatur manual dengan
+  menyeret kotaknya — hasilnya sama saja setelah tersimpan.</span>
 </div>
 
 <form method="post" action="{{ url_for('admin.template_deteksi_ulang', template_id=tpl.id) }}" class="mb-6">
@@ -25,7 +27,8 @@
   <span class="text-xs text-stone-400 ml-2">Berhasil untuk label bertuliskan biasa (NIM, Fakultas, dst.); kurang andal untuk font kaligrafi/miring.</span>
 </form>
 
-<div x-data="kalibrasi()" class="grid grid-cols-5 gap-6">
+<div x-data="kalibrasi()" @keydown.window="onKeydownGlobal($event)" class="grid grid-cols-5 gap-6">
+
 
   <!-- Panel kontrol -->
   <div class="col-span-2 space-y-4 max-h-[75vh] overflow-y-auto pr-2">
@@ -54,14 +57,28 @@
             <div class="col-span-2 grid grid-cols-2 gap-3">
               <div>
                 <label class="block text-[11px] text-stone-400 mb-1">Ukuran Maks.</label>
-                <input type="number" step="0.001" min="0" max="0.2" x-model.number="config.nama.max_size"
-                       class="w-full rounded-md border border-stone-300 px-2 py-1.5 text-sm">
+                <div class="flex items-center border border-stone-300 rounded-md overflow-hidden">
+                  <button type="button" @click="stepUkuran('nama','max_size',-1)" class="w-7 h-8 shrink-0 flex items-center justify-center text-stone-500 hover:bg-stone-100 border-r border-stone-300">−</button>
+                  <input type="number" :value="pxDari(config.nama.max_size)" @change="inputUkuranPx('nama','max_size',$event.target.value)"
+                         class="w-full min-w-0 text-center text-sm py-1.5 outline-none">
+                  <span class="px-1.5 text-[10px] text-stone-400 border-l border-stone-300 shrink-0">px</span>
+                  <button type="button" @click="stepUkuran('nama','max_size',1)" class="w-7 h-8 shrink-0 flex items-center justify-center text-stone-500 hover:bg-stone-100 border-l border-stone-300">+</button>
+                </div>
               </div>
               <div>
                 <label class="block text-[11px] text-stone-400 mb-1">Ukuran Min.</label>
-                <input type="number" step="0.001" min="0" max="0.2" x-model.number="config.nama.min_size"
-                       class="w-full rounded-md border border-stone-300 px-2 py-1.5 text-sm">
+                <div class="flex items-center border border-stone-300 rounded-md overflow-hidden">
+                  <button type="button" @click="stepUkuran('nama','min_size',-1)" class="w-7 h-8 shrink-0 flex items-center justify-center text-stone-500 hover:bg-stone-100 border-r border-stone-300">−</button>
+                  <input type="number" :value="pxDari(config.nama.min_size)" @change="inputUkuranPx('nama','min_size',$event.target.value)"
+                         class="w-full min-w-0 text-center text-sm py-1.5 outline-none">
+                  <span class="px-1.5 text-[10px] text-stone-400 border-l border-stone-300 shrink-0">px</span>
+                  <button type="button" @click="stepUkuran('nama','min_size',1)" class="w-7 h-8 shrink-0 flex items-center justify-center text-stone-500 hover:bg-stone-100 border-l border-stone-300">+</button>
+                </div>
               </div>
+              <p class="col-span-2 text-[10px] text-stone-400 -mt-1">
+                Nama otomatis mengecil dari Ukuran Maks. ke Ukuran Min. kalau
+                nama peserta kepanjangan supaya tetap muat 1 baris.
+              </p>
             </div>
           </template>
 
@@ -69,8 +86,13 @@
             <div class="col-span-2 grid grid-cols-2 gap-3">
               <div>
                 <label class="block text-[11px] text-stone-400 mb-1">Ukuran Font</label>
-                <input type="number" step="0.001" min="0" max="0.2" x-model.number="config[section].size"
-                       class="w-full rounded-md border border-stone-300 px-2 py-1.5 text-sm">
+                <div class="flex items-center border border-stone-300 rounded-md overflow-hidden">
+                  <button type="button" @click="stepUkuran(section,'size',-1)" class="w-7 h-8 shrink-0 flex items-center justify-center text-stone-500 hover:bg-stone-100 border-r border-stone-300">−</button>
+                  <input type="number" :value="pxDari(config[section].size)" @change="inputUkuranPx(section,'size',$event.target.value)"
+                         class="w-full min-w-0 text-center text-sm py-1.5 outline-none">
+                  <span class="px-1.5 text-[10px] text-stone-400 border-l border-stone-300 shrink-0">px</span>
+                  <button type="button" @click="stepUkuran(section,'size',1)" class="w-7 h-8 shrink-0 flex items-center justify-center text-stone-500 hover:bg-stone-100 border-l border-stone-300">+</button>
+                </div>
               </div>
               <div>
                 <label class="block text-[11px] text-stone-400 mb-1">Jarak Antar-huruf</label>
@@ -104,6 +126,49 @@
 
     <div class="bg-white rounded-xl border border-stone-200 p-4">
       <div class="flex items-center justify-between mb-3">
+        <div class="font-medium text-sm text-stone-700">Tanggal Terbit</div>
+        <label class="flex items-center gap-2 text-xs text-stone-500 cursor-pointer">
+          <input type="checkbox" x-model="config.tanggal.tampilkan" class="rounded border-stone-300">
+          Tampilkan di sertifikat
+        </label>
+      </div>
+      <p class="text-xs text-stone-400 mb-3">
+        Otomatis mengikuti tanggal terbit yang diatur di halaman Periode
+        Magang (mis. "30 Agustus 2026") - jadi kalau periode berikutnya
+        beda tanggal, tidak perlu ganti template.
+      </p>
+      <div class="grid grid-cols-2 gap-3" :class="!config.tanggal.tampilkan && 'opacity-40 pointer-events-none'">
+        <div><label class="block text-[11px] text-stone-400 mb-1">Posisi X</label>
+          <input type="number" step="0.001" min="0" max="1" x-model.number="config.tanggal.x" class="w-full rounded-md border border-stone-300 px-2 py-1.5 text-sm"></div>
+        <div><label class="block text-[11px] text-stone-400 mb-1">Posisi Y</label>
+          <input type="number" step="0.001" min="0" max="1" x-model.number="config.tanggal.y" class="w-full rounded-md border border-stone-300 px-2 py-1.5 text-sm"></div>
+        <div><label class="block text-[11px] text-stone-400 mb-1">Ukuran Font</label>
+          <div class="flex items-center border border-stone-300 rounded-md overflow-hidden">
+            <button type="button" @click="stepUkuran('tanggal','size',-1)" class="w-7 h-8 shrink-0 flex items-center justify-center text-stone-500 hover:bg-stone-100 border-r border-stone-300">−</button>
+            <input type="number" :value="pxDari(config.tanggal.size)" @change="inputUkuranPx('tanggal','size',$event.target.value)"
+                   class="w-full min-w-0 text-center text-sm py-1.5 outline-none">
+            <span class="px-1.5 text-[10px] text-stone-400 border-l border-stone-300 shrink-0">px</span>
+            <button type="button" @click="stepUkuran('tanggal','size',1)" class="w-7 h-8 shrink-0 flex items-center justify-center text-stone-500 hover:bg-stone-100 border-l border-stone-300">+</button>
+          </div>
+        </div>
+        <div><label class="block text-[11px] text-stone-400 mb-1">Warna</label>
+          <input type="color" x-model="config.tanggal.color" class="w-full h-8 rounded-md border border-stone-300"></div>
+        <div class="col-span-2 pt-1">
+          <button type="button" @click="bersihkanArea('tanggal')" :disabled="loading"
+                  class="w-full text-xs bg-stone-50 hover:bg-stone-100 border border-stone-200 text-stone-600 py-2 rounded-md transition disabled:opacity-50">
+            🧹 Bersihkan Area Ini (hapus teks tanggal lama di posisi ini)
+          </button>
+          <p class="text-[10px] text-stone-400 mt-1">
+            Pakai ini kalau desain masih ada teks tanggal lama ter-cetak di
+            gambar (mis. "Semarang, 30 Agustus 2026") - dekatkan dulu
+            Posisi X/Y ke lokasi teks lama itu, baru tekan tombol ini.
+          </p>
+        </div>
+      </div>
+    </div>
+
+    <div class="bg-white rounded-xl border border-stone-200 p-4">
+      <div class="flex items-center justify-between mb-3">
         <div class="font-medium text-sm text-stone-700">Nomor Sertifikat &amp; Kode Verifikasi</div>
         <label class="flex items-center gap-2 text-xs text-stone-500 cursor-pointer">
           <input type="checkbox" x-model="config.nomor.tampilkan" class="rounded border-stone-300">
@@ -117,7 +182,14 @@
         <div><label class="block text-[11px] text-stone-400 mb-1">Posisi X (tepi kanan)</label>
           <input type="number" step="0.001" min="0" max="1" x-model.number="config.nomor.x" class="w-full rounded-md border border-stone-300 px-2 py-1.5 text-sm"></div>
         <div><label class="block text-[11px] text-stone-400 mb-1">Ukuran Font</label>
-          <input type="number" step="0.001" min="0" max="0.1" x-model.number="config.nomor.size" class="w-full rounded-md border border-stone-300 px-2 py-1.5 text-sm"></div>
+          <div class="flex items-center border border-stone-300 rounded-md overflow-hidden">
+            <button type="button" @click="stepUkuran('nomor','size',-1)" class="w-7 h-8 shrink-0 flex items-center justify-center text-stone-500 hover:bg-stone-100 border-r border-stone-300">−</button>
+            <input type="number" :value="pxDari(config.nomor.size)" @change="inputUkuranPx('nomor','size',$event.target.value)"
+                   class="w-full min-w-0 text-center text-sm py-1.5 outline-none">
+            <span class="px-1.5 text-[10px] text-stone-400 border-l border-stone-300 shrink-0">px</span>
+            <button type="button" @click="stepUkuran('nomor','size',1)" class="w-7 h-8 shrink-0 flex items-center justify-center text-stone-500 hover:bg-stone-100 border-l border-stone-300">+</button>
+          </div>
+        </div>
         <div><label class="block text-[11px] text-stone-400 mb-1">Posisi Y baris 1</label>
           <input type="number" step="0.001" min="0" max="1" x-model.number="config.nomor.y1" class="w-full rounded-md border border-stone-300 px-2 py-1.5 text-sm"></div>
         <div><label class="block text-[11px] text-stone-400 mb-1">Posisi Y baris 2</label>
@@ -135,12 +207,25 @@
         <div><label class="block text-[11px] text-stone-400 mb-1">Posisi Y</label>
           <input type="number" step="0.001" min="0" max="1" x-model.number="config.qr.y" class="w-full rounded-md border border-stone-300 px-2 py-1.5 text-sm"></div>
         <div><label class="block text-[11px] text-stone-400 mb-1">Ukuran</label>
-          <input type="number" step="0.001" min="0" max="0.3" x-model.number="config.qr.size" class="w-full rounded-md border border-stone-300 px-2 py-1.5 text-sm"></div>
+          <div class="flex items-center border border-stone-300 rounded-md overflow-hidden">
+            <button type="button" @click="stepUkuran('qr','size',-2)" class="w-7 h-8 shrink-0 flex items-center justify-center text-stone-500 hover:bg-stone-100 border-r border-stone-300">−</button>
+            <input type="number" :value="pxDari(config.qr.size)" @change="inputUkuranPx('qr','size',$event.target.value)"
+                   class="w-full min-w-0 text-center text-sm py-1.5 outline-none">
+            <span class="px-1.5 text-[10px] text-stone-400 border-l border-stone-300 shrink-0">px</span>
+            <button type="button" @click="stepUkuran('qr','size',2)" class="w-7 h-8 shrink-0 flex items-center justify-center text-stone-500 hover:bg-stone-100 border-l border-stone-300">+</button>
+          </div>
+        </div>
         <div><label class="block text-[11px] text-stone-400 mb-1">Posisi Y Label</label>
           <input type="number" step="0.001" min="0" max="1" x-model.number="config.qr.label_y" class="w-full rounded-md border border-stone-300 px-2 py-1.5 text-sm"></div>
       </div>
     </div>
 
+    <div x-show="adaPerubahan()" x-cloak class="sticky bottom-[52px] pb-2 bg-stone-50">
+      <button @click="batalkanSemua()" :disabled="loading"
+              class="w-full text-sm bg-white border border-stone-300 hover:border-rose-300 hover:bg-rose-50 hover:text-rose-600 text-stone-600 py-2 rounded-lg transition disabled:opacity-50">
+        ↺ Batalkan Semua Perubahan (kembali ke kalibrasi tersimpan)
+      </button>
+    </div>
     <div class="flex gap-3 sticky bottom-0 bg-stone-50 py-3">
       <button @click="renderUjiCoba()" :disabled="loading"
               class="flex-1 bg-stone-700 hover:bg-stone-800 text-white text-sm font-medium py-2.5 rounded-lg transition disabled:opacity-50">
@@ -155,15 +240,55 @@
     <p x-show="pesan" x-text="pesan" class="text-xs text-center" :class="pesanError ? 'text-rose-600' : 'text-emerald-600'"></p>
   </div>
 
-  <!-- Pratinjau -->
+  <!-- Pratinjau + overlay kotak yang bisa diseret -->
   <div class="col-span-3">
     <div class="bg-white rounded-xl border border-stone-200 p-4 sticky top-6">
-      <div class="text-sm font-medium text-stone-700 mb-3">Pratinjau (data contoh)</div>
-      <div class="aspect-[1.41/1] bg-stone-100 rounded-lg overflow-hidden flex items-center justify-center">
-        <img x-show="previewUrl" :src="previewUrl" class="w-full h-full object-contain">
-        <img x-show="!previewUrl" src="{{ url_for('admin.template_preview_image', template_id=tpl.id) }}" class="w-full h-full object-contain">
+      <div class="flex items-center justify-between mb-3">
+        <div class="text-sm font-medium text-stone-700">Pratinjau (data contoh)</div>
+        <div class="text-xs text-stone-400">🖐 Seret kotak · Esc batalkan seretan · ⌘/Ctrl+Z batalkan semua</div>
       </div>
-      <p class="text-xs text-stone-400 mt-2">Klik "Render Uji Coba" setiap kali mengubah angka untuk melihat hasilnya di sini.</p>
+
+      <div x-ref="kanvas"
+           class="aspect-[1.41/1] bg-stone-100 rounded-lg overflow-hidden relative select-none"
+           @mousemove.window="geser($event)" @mouseup.window="lepas()"
+           @touchmove.window.prevent="geser($event)" @touchend.window="lepas()"
+           @keydown.escape.window="batalkanDrag()">
+
+        <img x-show="previewUrl" :src="previewUrl" @load="lebarGambar = $event.target.naturalWidth" class="absolute inset-0 w-full h-full object-contain pointer-events-none">
+        <img x-show="!previewUrl" src="{{ url_for('admin.template_preview_image', template_id=tpl.id) }}" @load="lebarGambar = $event.target.naturalWidth" class="absolute inset-0 w-full h-full object-contain pointer-events-none">
+
+        <!-- Garis bantu tengah halaman: samar terus terlihat, menyala ungu solid + berlabel saat sedang menempel -->
+        <div class="absolute inset-y-0 left-1/2 w-px pointer-events-none transition-colors"
+             :class="guideV ? 'bg-brand-500' : 'bg-stone-300'"></div>
+        <div x-show="guideV" x-cloak
+             class="absolute top-1.5 left-1/2 -translate-x-1/2 bg-brand-500 text-white text-[10px] font-medium px-1.5 py-0.5 rounded pointer-events-none whitespace-nowrap">
+          Tengah halaman ✓
+        </div>
+
+        <!-- Kotak-kotak field yang bisa diseret -->
+        <template x-for="f in daftarField" :key="f.key">
+          <div x-show="f.key !== 'nomor' && f.key !== 'tanggal' || config[f.key].tampilkan"
+               x-cloak
+               class="absolute"
+               :class="draggingKey === f.key ? 'cursor-grabbing z-20' : 'cursor-grab z-10'"
+               :style="gayaKotak(f)"
+               @mousedown="mulai($event, f.key)" @touchstart="mulai($event, f.key)">
+            <div class="border-2 rounded-md px-2 py-1 text-[10px] font-medium whitespace-nowrap shadow-sm transition-colors"
+                 :class="draggingKey === f.key ? 'border-brand-600 bg-brand-600 text-white' : 'border-brand-400/70 bg-white/90 text-brand-700 hover:border-brand-500'"
+                 x-text="f.label"></div>
+            <div x-show="draggingKey === f.key" x-cloak
+                 class="mt-1 bg-stone-800 text-white text-[10px] px-1.5 py-0.5 rounded whitespace-nowrap">
+              <span x-text="koordinatTampil(f)"></span>
+            </div>
+          </div>
+        </template>
+      </div>
+
+      <p class="text-xs text-stone-400 mt-2">
+        Kotak di atas cuma penanda posisi (bukan hasil render sebenarnya) supaya cepat digeser.
+        Klik <strong>"Render Uji Coba"</strong> setelah selesai mengatur untuk melihat hasil
+        dengan teks &amp; font asli — otomatis ter-render juga tiap kali selesai menyeret.
+      </p>
     </div>
   </div>
 </div>
@@ -172,10 +297,167 @@
 function kalibrasi() {
   return {
     config: {{ config | tojson }},
+    configTersimpan: {{ config | tojson }},   // snapshot baseline "tersimpan terakhir" - dipakai tombol Batalkan
     previewUrl: null,
+    lebarGambar: null,   // lebar asli gambar template (px) - dibaca dari @load, dipakai konversi Ukuran Font ke px
     loading: false,
     pesan: "",
     pesanError: false,
+
+    daftarField: [
+      { key: "nama", label: "Nama", anchor: "center" },
+      { key: "nim", label: "NIM", anchor: "center" },
+      { key: "fakultas", label: "Fakultas", anchor: "center" },
+      { key: "universitas", label: "Universitas", anchor: "center" },
+      { key: "tanggal", label: "Tanggal Terbit", anchor: "center" },
+      { key: "nomor", label: "No. Sertifikat", anchor: "right" },
+      { key: "qr", label: "QR", anchor: "topleft" },
+    ],
+    draggingKey: null,
+    guideV: false,
+    _diffNomor: 0.02,
+
+    // Hitung posisi kotak (dalam % terhadap kanvas) dari config field ybs.
+    // "center"  -> field yang teksnya rata tengah (nama/nim/fakultas/dst)
+    // "right"   -> field yang teksnya rata kanan (nomor sertifikat)
+    // "topleft" -> field berupa kotak dari sudut kiri-atas (QR code)
+    gayaKotak(f) {
+      const c = this.config[f.key];
+      if (f.anchor === "right") {
+        return `left:${c.x * 100}%; top:${c.y1 * 100}%; transform: translate(-100%, -50%);`;
+      }
+      if (f.anchor === "topleft") {
+        return `left:${c.x * 100}%; top:${c.y * 100}%; transform: translate(0, 0);`;
+      }
+      return `left:${c.x * 100}%; top:${c.y * 100}%; transform: translate(-50%, -50%);`;
+    },
+
+    koordinatTampil(f) {
+      const c = this.config[f.key];
+      const y = f.anchor === "right" ? c.y1 : c.y;
+      return `x: ${c.x.toFixed(3)}  y: ${y.toFixed(3)}`;
+    },
+
+    // --- Konversi Ukuran Font: pecahan (0-1, satuan asli sistem, relatif
+    // lebar gambar) <-> piksel (satuan yang lebih akrab, mirip Word/editor
+    // lain). 2000px dipakai sebagai perkiraan kalau gambar belum sempat
+    // termuat (lebarGambar masih null) supaya angka tidak error/kosong. ---
+    pxDari(frac) {
+      const w = this.lebarGambar || 2000;
+      return Math.round((frac || 0) * w);
+    },
+    fracDari(px) {
+      const w = this.lebarGambar || 2000;
+      return Math.round((px / w) * 100000) / 100000;
+    },
+    stepUkuran(section, field, deltaPx) {
+      const pxBaru = Math.max(1, this.pxDari(this.config[section][field]) + deltaPx);
+      this.config[section][field] = this.fracDari(pxBaru);
+    },
+    inputUkuranPx(section, field, nilai) {
+      const px = parseFloat(nilai);
+      if (!isNaN(px) && px > 0) this.config[section][field] = this.fracDari(px);
+    },
+
+    posisiRelatif(e) {
+      const rect = this.$refs.kanvas.getBoundingClientRect();
+      const titik = e.touches && e.touches.length ? e.touches[0] : e;
+      const x = (titik.clientX - rect.left) / rect.width;
+      const y = (titik.clientY - rect.top) / rect.height;
+      return { x: Math.min(Math.max(x, 0), 1), y: Math.min(Math.max(y, 0), 1) };
+    },
+
+    mulai(e, key) {
+      e.preventDefault();
+      this.draggingKey = key;
+      // simpan posisi field ini SEBELUM seretan dimulai, supaya Esc bisa
+      // mengembalikannya persis ke titik semula (bukan ke kalibrasi
+      // tersimpan di server, cuma membatalkan gerakan seret yang sedang
+      // berlangsung saat ini saja)
+      const c = this.config[key];
+      this._posisiSebelumDrag = key === "nomor"
+        ? { x: c.x, y1: c.y1, y2: c.y2 }
+        : { x: c.x, y: c.y };
+      if (key === "nomor") {
+        this._diffNomor = this.config.nomor.y2 - this.config.nomor.y1;
+      }
+    },
+
+    geser(e) {
+      if (!this.draggingKey) return;
+      const { x, y } = this.posisiRelatif(e);
+      const f = this.daftarField.find((f) => f.key === this.draggingKey);
+      const c = this.config[this.draggingKey];
+
+      // Sentuh/dekat tengah halaman (x=0.5)? Tempelkan otomatis & tampilkan garis bantu.
+      const AMBANG_SNAP = 0.012;
+      let xFinal = x;
+      if (Math.abs(x - 0.5) < AMBANG_SNAP) {
+        xFinal = 0.5;
+        this.guideV = true;
+      } else {
+        this.guideV = false;
+      }
+
+      c.x = Math.round(xFinal * 10000) / 10000;
+      if (f.anchor === "right") {
+        c.y1 = Math.round(y * 10000) / 10000;
+        c.y2 = Math.round((y + this._diffNomor) * 10000) / 10000;
+      } else {
+        c.y = Math.round(y * 10000) / 10000;
+      }
+    },
+
+    lepas() {
+      if (!this.draggingKey) return;
+      this.draggingKey = null;
+      this.guideV = false;
+      this.renderUjiCoba();
+    },
+
+    // Batalkan HANYA seretan yang sedang berlangsung saat ini (tekan Esc
+    // di tengah proses menyeret) - kembalikan field itu ke posisi persis
+    // sebelum seretan ini dimulai, tanpa memengaruhi field lain / kalibrasi
+    // tersimpan.
+    batalkanDrag() {
+      if (!this.draggingKey || !this._posisiSebelumDrag) return;
+      Object.assign(this.config[this.draggingKey], this._posisiSebelumDrag);
+      this.draggingKey = null;
+      this.guideV = false;
+      this.pesan = "Seretan dibatalkan.";
+      this.pesanError = false;
+    },
+
+    // Ada perubahan yang belum disimpan? (dibandingkan snapshot
+    // configTersimpan) - dipakai untuk menampilkan/menyembunyikan tombol
+    // "Batalkan Semua Perubahan".
+    adaPerubahan() {
+      return JSON.stringify(this.config) !== JSON.stringify(this.configTersimpan);
+    },
+
+    // Batalkan SEMUA perubahan yang belum disimpan (baik dari menyeret
+    // maupun ketik manual di panel angka), kembali ke kalibrasi yang
+    // terakhir kali berhasil disimpan ke server.
+    batalkanSemua() {
+      if (!this.adaPerubahan()) return;
+      if (!confirm("Batalkan semua perubahan yang belum disimpan dan kembali ke kalibrasi tersimpan terakhir?")) return;
+      this.config = JSON.parse(JSON.stringify(this.configTersimpan));
+      this.previewUrl = null; // tampilkan kembali gambar template asli (belum ada perubahan dirender)
+      this.pesan = "Perubahan dibatalkan, kembali ke kalibrasi tersimpan.";
+      this.pesanError = false;
+    },
+
+    onKeydownGlobal(e) {
+      const kombinasiUndo = (e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === "z";
+      if (kombinasiUndo) {
+        e.preventDefault();
+        if (this.draggingKey) {
+          this.batalkanDrag();
+        } else {
+          this.batalkanSemua();
+        }
+      }
+    },
 
     async bersihkanArea(section) {
       const c = this.config[section];
@@ -240,6 +522,7 @@ function kalibrasi() {
           body: JSON.stringify(this.config),
         });
         if (!res.ok) throw new Error("Gagal menyimpan");
+        this.configTersimpan = JSON.parse(JSON.stringify(this.config)); // baseline baru untuk tombol Batalkan
         this.pesan = "Kalibrasi tersimpan.";
         this.pesanError = false;
       } catch (e) {

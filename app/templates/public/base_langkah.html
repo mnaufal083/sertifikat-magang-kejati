@@ -1,0 +1,23 @@
+{#
+  Base khusus untuk 3 halaman alur klaim sertifikat (ambil_sertifikat.html,
+  otp.html, terkirim.html). Sebelumnya cuma ambil_sertifikat.html yang
+  pakai layout 2 kolom (ungu-putih); otp.html & terkirim.html masing-masing
+  kartu tunggal terpisah sehingga terasa "putus" & indikator tahapan di
+  panel ungu tidak pernah berpindah. Sekarang ketiganya berbagi shell yang
+  sama, jadi panel ungu (dengan indikator tahapan) selalu tampil beriringan
+  dan otomatis mengikuti progres lewat variabel `langkah`.
+
+  Lebar kotak juga sedikit dilebarkan (max-w-3xl -> max-w-4xl) supaya
+  konten kanan (form/OTP/ringkasan) punya sedikit lebih banyak ruang.
+#}
+{% extends "public/base_public.html" %}
+{% block body %}
+<div class="min-h-screen flex items-center justify-center p-4">
+  <div class="max-w-4xl w-full bg-white rounded-2xl shadow-lg overflow-hidden grid md:grid-cols-2">
+    {% include "public/_panel_langkah.html" %}
+    <div class="p-8 flex flex-col justify-center">
+      {% block panel_kanan %}{% endblock %}
+    </div>
+  </div>
+</div>
+{% endblock %}

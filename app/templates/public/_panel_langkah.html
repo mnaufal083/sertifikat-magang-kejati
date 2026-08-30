@@ -1,0 +1,53 @@
+{#
+  Panel kiri (ungu) yang dipakai bersama oleh ambil_sertifikat.html,
+  otp.html, dan terkirim.html - supaya indikator tahapan selalu ikut
+  berpindah sesuai posisi peserta di alur klaim sertifikat, bukan
+  cuma tampilan statis "Isi data diri peserta" yang tidak pernah berubah.
+
+  Variabel yang dibaca: `langkah` (1, 2, atau 3) - dikirim dari route
+  masing-masing lewat render_template(..., langkah=N). Kalau tidak
+  dikirim, default ke 1.
+#}
+{% set langkah_aktif = langkah|default(1) %}
+{% set daftar_langkah = [
+  (1, 'Isi data diri peserta'),
+  (2, 'Verifikasi kode OTP via Email'),
+  (3, 'Sertifikat dikirim ke email'),
+] %}
+
+<div class="bg-gradient-to-br from-brand-700 to-brand-900 text-white p-8 flex flex-col justify-between">
+  <div>
+    <div class="flex items-center gap-2 text-sm text-brand-200 mb-8">
+      <span class="text-lg">⚖</span> Kejaksaan Tinggi<br>Jawa Tengah
+    </div>
+    <h1 class="text-2xl font-bold leading-snug mb-3">Portal Pengambilan<br>Sertifikat Magang</h1>
+    <p class="text-brand-200 text-sm leading-relaxed">
+      Sertifikat resmi diterbitkan otomatis oleh sistem dan hanya bisa
+      diambil oleh pemilik data yang terverifikasi.
+    </p>
+  </div>
+
+  <div class="space-y-4 mt-10 text-sm">
+    {% for no, label in daftar_langkah %}
+      {% if no < langkah_aktif %}
+        {# sudah dilewati #}
+        <div class="flex items-center gap-3 text-white">
+          <span class="w-6 h-6 rounded-full bg-emerald-400 text-brand-900 flex items-center justify-center text-xs font-bold">✓</span>
+          {{ label }}
+        </div>
+      {% elif no == langkah_aktif %}
+        {# sedang di tahap ini #}
+        <div class="flex items-center gap-3 text-white font-semibold">
+          <span class="w-6 h-6 rounded-full bg-white text-brand-800 flex items-center justify-center text-xs font-bold">{{ no }}</span>
+          {{ label }}
+        </div>
+      {% else %}
+        {# belum sampai #}
+        <div class="flex items-center gap-3 text-brand-300">
+          <span class="w-6 h-6 rounded-full border border-white/30 flex items-center justify-center text-xs">{{ no }}</span>
+          {{ label }}
+        </div>
+      {% endif %}
+    {% endfor %}
+  </div>
+</div>
