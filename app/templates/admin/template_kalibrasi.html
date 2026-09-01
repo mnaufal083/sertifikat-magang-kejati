@@ -18,7 +18,7 @@
   menyeret kotaknya — hasilnya sama saja setelah tersimpan.</span>
 </div>
 
-<form method="post" action="{{ url_for('admin.template_deteksi_ulang', template_id=tpl.id) }}" class="mb-6">
+<form method="post" action="{{ url_for('admin.template_deteksi_ulang', template_id=tpl.id) }}" class="mb-3">
   <button type="submit"
           onclick="return confirm('Deteksi ulang akan mencari label Nama/NIM/Fakultas/Universitas pada gambar template saat ini dan membersihkan area di sekitarnya. Lanjutkan?')"
           class="text-sm bg-white border border-stone-300 hover:border-brand-400 text-stone-700 px-4 py-2 rounded-lg transition">
@@ -26,6 +26,113 @@
   </button>
   <span class="text-xs text-stone-400 ml-2">Berhasil untuk label bertuliskan biasa (NIM, Fakultas, dst.); kurang andal untuk font kaligrafi/miring.</span>
 </form>
+
+<div x-data="deteksiDiff()" class="mb-6">
+  <button type="button" @click="modalUpload = true; error = ''"
+          class="text-sm bg-white border border-stone-300 hover:border-brand-400 text-stone-700 px-4 py-2 rounded-lg transition">
+    🆚 Deteksi dari 2 Gambar (Contoh vs Polos)
+  </button>
+  <span class="text-xs text-stone-400 ml-2">Lebih andal dari deteksi di atas — bekerja untuk font APA PUN, termasuk kaligrafi (cocok untuk field Nama).</span>
+
+  <!-- Modal 1: unggah 2 file -->
+  <div x-show="modalUpload" x-cloak class="fixed inset-0 z-50 flex items-center justify-center p-4">
+    <div class="absolute inset-0 bg-stone-900/60" @click="!loading && (modalUpload = false)"></div>
+    <div class="relative bg-white rounded-2xl shadow-xl w-full max-w-lg p-6">
+      <h2 class="text-sm font-bold text-stone-800 mb-1">Deteksi dari 2 Gambar</h2>
+      <p class="text-xs text-stone-500 mb-4">
+        Unggah 2 versi desain yang <strong>identik persis</strong> kecuali
+        teksnya: satu dengan teks contoh terisi di semua field, satu lagi
+        sudah dihapus semua teksnya (polos). Sistem mencari bagian yang
+        berbeda secara otomatis — bekerja untuk font apa pun, termasuk kaligrafi.
+      </p>
+      <div class="space-y-3 mb-4">
+        <div>
+          <label class="block text-xs font-medium text-stone-600 mb-1">Versi dengan teks contoh</label>
+          <input type="file" accept=".png,.jpg,.jpeg" @change="fileContoh = $event.target.files[0]"
+                 class="w-full text-xs border border-stone-300 rounded-lg file:mr-2 file:py-2 file:px-3 file:border-0 file:bg-stone-100 file:text-stone-600">
+        </div>
+        <div>
+          <label class="block text-xs font-medium text-stone-600 mb-1">Versi polos (tanpa teks)</label>
+          <input type="file" accept=".png,.jpg,.jpeg" @change="fileKosong = $event.target.files[0]"
+                 class="w-full text-xs border border-stone-300 rounded-lg file:mr-2 file:py-2 file:px-3 file:border-0 file:bg-stone-100 file:text-stone-600">
+        </div>
+      </div>
+      <p x-show="error" x-cloak x-text="error" class="text-xs text-rose-600 mb-3"></p>
+      <div class="flex gap-2">
+        <button type="button" @click="modalUpload = false" :disabled="loading"
+                class="flex-1 text-sm border border-stone-300 text-stone-600 py-2 rounded-lg hover:bg-stone-50 disabled:opacity-50">Batal</button>
+        <button type="button" @click="jalankanDeteksi()" :disabled="loading || !fileContoh || !fileKosong"
+                class="flex-1 text-sm bg-brand-600 hover:bg-brand-700 text-white py-2 rounded-lg disabled:opacity-50">
+          <span x-show="!loading">Deteksi Sekarang</span>
+          <span x-show="loading" x-cloak>Memproses...</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal 2: beri label tiap kotak terdeteksi -->
+  <div x-show="modalLabel" x-cloak class="fixed inset-0 z-50 flex items-center justify-center p-4">
+    <div class="absolute inset-0 bg-stone-900/60" @click="!menerapkan && (modalLabel = false)"></div>
+    <div class="relative bg-white rounded-2xl shadow-xl w-full max-w-4xl p-6 max-h-[90vh] overflow-auto">
+      <h2 class="text-sm font-bold text-stone-800 mb-1">Beri Label Tiap Kotak yang Terdeteksi</h2>
+      <p class="text-xs text-stone-500 mb-4">
+        <span x-text="kotak.length"></span> area berbeda ditemukan. Pilih field yang sesuai untuk
+        tiap kotak bernomor (tebakan OCR ditampilkan sebagai petunjuk kalau berhasil terbaca).
+        Kotak yang dibiarkan "— Abaikan —" tidak diterapkan.
+      </p>
+
+      <div class="relative border border-stone-200 rounded-lg overflow-hidden mb-4">
+        <img :src="gambarContohUrl" class="w-full block">
+        <template x-for="k in kotak" :key="'box-' + k.id">
+          <div class="absolute border-2 flex items-start justify-start transition-colors"
+               :class="k.field ? 'border-emerald-500 bg-emerald-500/10' : 'border-brand-500 bg-brand-500/10'"
+               :style="`left:${(k.x - k.w/2)*100}%; top:${(k.y - k.h/2)*100}%; width:${k.w*100}%; height:${k.h*100}%;`">
+            <span class="text-white text-[10px] font-bold px-1 rounded-br"
+                  :class="k.field ? 'bg-emerald-600' : 'bg-brand-600'"
+                  x-text="k.id + 1"></span>
+          </div>
+        </template>
+      </div>
+
+      <div class="space-y-2">
+        <template x-for="k in kotak" :key="'row-' + k.id">
+          <div class="flex items-center gap-3 text-sm border border-stone-200 rounded-lg px-3 py-2">
+            <span class="w-6 h-6 shrink-0 rounded-full text-white text-xs font-bold flex items-center justify-center"
+                  :class="k.field ? 'bg-emerald-600' : 'bg-brand-600'" x-text="k.id + 1"></span>
+            <span class="flex-1 text-stone-500 text-xs truncate"
+                  x-text="k.tebakan ? ('Tebakan: \'' + k.tebakan + '\'') : '(tidak terbaca — wajar untuk font kaligrafi, pilih manual)'"></span>
+            <select x-model="k.field" class="text-xs border border-stone-300 rounded-md px-2 py-1.5 shrink-0">
+              <option value="">— Abaikan —</option>
+              <option value="nama">Nama</option>
+              <option value="nim">NIM</option>
+              <option value="fakultas">Fakultas</option>
+              <option value="universitas">Universitas</option>
+              <option value="tanggal">Tanggal Terbit</option>
+              <option value="nomor">No. Sertifikat</option>
+            </select>
+          </div>
+        </template>
+      </div>
+
+      <p class="text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mt-4">
+        ⚠ Menerapkan hasil ini akan <strong>mengganti gambar latar template</strong> dengan versi
+        polos yang baru diunggah, sekaligus memindahkan posisi field yang dilabeli di atas.
+        Halaman dimuat ulang otomatis setelah berhasil.
+      </p>
+      <p x-show="errorTerapkan" x-cloak x-text="errorTerapkan" class="text-xs text-rose-600 mt-2"></p>
+
+      <div class="flex gap-2 mt-3">
+        <button type="button" @click="modalLabel = false" :disabled="menerapkan"
+                class="flex-1 text-sm border border-stone-300 text-stone-600 py-2 rounded-lg hover:bg-stone-50 disabled:opacity-50">Tutup</button>
+        <button type="button" @click="terapkanHasil()" :disabled="menerapkan || !adaYangDipilih()"
+                class="flex-1 text-sm bg-brand-600 hover:bg-brand-700 text-white py-2 rounded-lg disabled:opacity-50">
+          <span x-show="!menerapkan">✓ Terapkan Hasil</span>
+          <span x-show="menerapkan" x-cloak>Menerapkan...</span>
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
 
 <div x-data="kalibrasi()" @keydown.window="onKeydownGlobal($event)" class="grid grid-cols-5 gap-6">
 
@@ -254,8 +361,16 @@
            @touchmove.window.prevent="geser($event)" @touchend.window="lepas()"
            @keydown.escape.window="batalkanDrag()">
 
-        <img x-show="previewUrl" :src="previewUrl" @load="lebarGambar = $event.target.naturalWidth" class="absolute inset-0 w-full h-full object-contain pointer-events-none">
-        <img x-show="!previewUrl" src="{{ url_for('admin.template_preview_image', template_id=tpl.id) }}" @load="lebarGambar = $event.target.naturalWidth" class="absolute inset-0 w-full h-full object-contain pointer-events-none">
+        <!-- Latar SELALU gambar template asli/polos - JANGAN pernah ganti ke
+             hasil render server di sini, karena hasil render server juga
+             sudah punya teks contoh ter-cetak di pixel gambarnya sendiri;
+             kalau ditumpuk dengan overlay teks live di bawah, hasilnya
+             teks dobel/numpuk (persis bug yang dilaporkan). Hasil render
+             server ditampilkan terpisah lewat modal "Hasil Render Server",
+             bukan di kanvas yang sama dengan overlay live ini. -->
+        <img src="{{ url_for('admin.template_preview_image', template_id=tpl.id) }}"
+             @load="lebarGambar = $event.target.naturalWidth"
+             class="absolute inset-0 w-full h-full object-contain pointer-events-none">
 
         <!-- Garis bantu tengah halaman: samar terus terlihat, menyala ungu solid + berlabel saat sedang menempel -->
         <div class="absolute inset-y-0 left-1/2 w-px pointer-events-none transition-colors"
@@ -265,31 +380,83 @@
           Tengah halaman ✓
         </div>
 
-        <!-- Kotak-kotak field yang bisa diseret -->
-        <template x-for="f in daftarField" :key="f.key">
-          <div x-show="f.key !== 'nomor' && f.key !== 'tanggal' || config[f.key].tampilkan"
-               x-cloak
-               class="absolute"
-               :class="draggingKey === f.key ? 'cursor-grabbing z-20' : 'cursor-grab z-10'"
-               :style="gayaKotak(f)"
-               @mousedown="mulai($event, f.key)" @touchstart="mulai($event, f.key)">
-            <div class="border-2 rounded-md px-2 py-1 text-[10px] font-medium whitespace-nowrap shadow-sm transition-colors"
-                 :class="draggingKey === f.key ? 'border-brand-600 bg-brand-600 text-white' : 'border-brand-400/70 bg-white/90 text-brand-700 hover:border-brand-500'"
-                 x-text="f.label"></div>
-            <div x-show="draggingKey === f.key" x-cloak
-                 class="mt-1 bg-stone-800 text-white text-[10px] px-1.5 py-0.5 rounded whitespace-nowrap">
-              <span x-text="koordinatTampil(f)"></span>
-            </div>
+        <!-- NAMA: teks contoh asli, font & ukuran live, di-drag langsung -->
+        <div class="absolute whitespace-nowrap outline-dashed outline-1 outline-offset-4 rounded"
+             :class="draggingKey === 'nama' ? 'outline-brand-500 z-20' : 'outline-transparent hover:outline-brand-300 z-10'"
+             :style="`left:${config.nama.x*100}%; top:${config.nama.y*100}%; transform:translate(-50%,-50%); cursor:${draggingKey==='nama'?'grabbing':'grab'};`"
+             @mousedown="mulai($event,'nama')" @touchstart="mulai($event,'nama')">
+          <span :style="`font-family:'kalibrasi-nama'; font-size:${pxFontCss(config.nama.max_size)}; color:${config.nama.color};`" x-text="NAMA_CONTOH"></span>
+          <div x-show="draggingKey === 'nama'" x-cloak class="absolute left-1/2 -translate-x-1/2 top-full mt-1 bg-stone-800 text-white text-[10px] px-1.5 py-0.5 rounded whitespace-nowrap" x-text="koordinatTampil('nama')"></div>
+        </div>
+
+        <!-- NIM / FAKULTAS / UNIVERSITAS: label(bold) + nilai(regular), sepasang per baris -->
+        <template x-for="f in daftarIdentitas" :key="f.key">
+          <div class="absolute whitespace-nowrap outline-dashed outline-1 outline-offset-4 rounded"
+               :class="draggingKey === f.key ? 'outline-brand-500 z-20' : 'outline-transparent hover:outline-brand-300 z-10'"
+               :style="`left:${config[f.key].x*100}%; top:${config[f.key].y*100}%; transform:translate(-50%,-50%); cursor:${draggingKey===f.key?'grabbing':'grab'};`"
+               @mousedown="mulai($event,f.key)" @touchstart="mulai($event,f.key)">
+            <span :style="`font-family:'kalibrasi-bold'; letter-spacing:${(config[f.key].tracking||0)*lebarKanvas}px; font-size:${pxFontCss(config[f.key].size)}; color:${config[f.key].color};`" x-text="f.contohLabel"></span>
+            <span :style="`font-family:'kalibrasi-reg'; letter-spacing:${(config[f.key].tracking||0)*lebarKanvas}px; font-size:${pxFontCss(config[f.key].size)}; color:${config[f.key].color};`" x-text="f.contohNilai"></span>
+            <div x-show="draggingKey === f.key" x-cloak class="absolute left-1/2 -translate-x-1/2 top-full mt-1 bg-stone-800 text-white text-[10px] px-1.5 py-0.5 rounded whitespace-nowrap" x-text="koordinatTampil(f.key)"></div>
           </div>
         </template>
+
+        <!-- TANGGAL TERBIT -->
+        <div x-show="config.tanggal.tampilkan" x-cloak
+             class="absolute whitespace-nowrap outline-dashed outline-1 outline-offset-4 rounded"
+             :class="draggingKey === 'tanggal' ? 'outline-brand-500 z-20' : 'outline-transparent hover:outline-brand-300 z-10'"
+             :style="`left:${config.tanggal.x*100}%; top:${config.tanggal.y*100}%; transform:translate(-50%,-50%); cursor:${draggingKey==='tanggal'?'grabbing':'grab'};`"
+             @mousedown="mulai($event,'tanggal')" @touchstart="mulai($event,'tanggal')">
+          <span :style="`font-family:'kalibrasi-tanggal'; font-size:${pxFontCss(config.tanggal.size)}; color:${config.tanggal.color};`" x-text="TANGGAL_CONTOH"></span>
+          <div x-show="draggingKey === 'tanggal'" x-cloak class="absolute left-1/2 -translate-x-1/2 top-full mt-1 bg-stone-800 text-white text-[10px] px-1.5 py-0.5 rounded whitespace-nowrap" x-text="koordinatTampil('tanggal')"></div>
+        </div>
+
+        <!-- NO. SERTIFIKAT + KODE VERIFIKASI: rata kanan, 2 baris -->
+        <div x-show="config.nomor.tampilkan" x-cloak
+             class="absolute whitespace-nowrap text-right outline-dashed outline-1 outline-offset-4 rounded"
+             :class="draggingKey === 'nomor' ? 'outline-brand-500 z-20' : 'outline-transparent hover:outline-brand-300 z-10'"
+             :style="`left:${config.nomor.x*100}%; top:${config.nomor.y1*100}%; transform:translate(-100%,0); cursor:${draggingKey==='nomor'?'grabbing':'grab'};`"
+             @mousedown="mulai($event,'nomor')" @touchstart="mulai($event,'nomor')">
+          <div :style="`font-family:'kalibrasi-reg'; font-size:${pxFontCss(config.nomor.size)}; color:${config.nomor.color};`" x-text="'No. Sertifikat: ' + NOMOR_CONTOH"></div>
+          <div :style="`font-family:'kalibrasi-reg'; font-size:${pxFontCss(config.nomor.size)}; color:${config.nomor.color};`" x-text="'Kode Verifikasi: ' + KODE_CONTOH"></div>
+          <div x-show="draggingKey === 'nomor'" x-cloak class="absolute right-0 top-full mt-1 bg-stone-800 text-white text-[10px] px-1.5 py-0.5 rounded whitespace-nowrap" x-text="koordinatTampil('nomor')"></div>
+        </div>
+
+        <!-- QR CODE: kotak proporsi asli (bukan pola QR sungguhan, cuma penanda ukuran & posisi) -->
+        <div class="absolute border-2 border-dashed rounded flex items-center justify-center bg-white/70 text-[9px] font-medium text-stone-500"
+             :class="draggingKey === 'qr' ? 'border-brand-500 z-20' : 'border-stone-400 hover:border-brand-400 z-10'"
+             :style="`left:${config.qr.x*100}%; top:${config.qr.y*100}%; width:${config.qr.size*lebarKanvas}px; height:${config.qr.size*lebarKanvas}px; cursor:${draggingKey==='qr'?'grabbing':'grab'};`"
+             @mousedown="mulai($event,'qr')" @touchstart="mulai($event,'qr')">
+          QR
+          <div x-show="draggingKey === 'qr'" x-cloak class="absolute left-0 top-full mt-1 bg-stone-800 text-white text-[10px] px-1.5 py-0.5 rounded whitespace-nowrap" x-text="koordinatTampil('qr')"></div>
+        </div>
       </div>
 
       <p class="text-xs text-stone-400 mt-2">
-        Kotak di atas cuma penanda posisi (bukan hasil render sebenarnya) supaya cepat digeser.
-        Klik <strong>"Render Uji Coba"</strong> setelah selesai mengatur untuk melihat hasil
-        dengan teks &amp; font asli — otomatis ter-render juga tiap kali selesai menyeret.
+        Teks di atas sudah pakai font &amp; ukuran asli, ikut berubah langsung
+        saat diseret atau ukurannya diubah — tidak perlu tunggu render server.
+        Klik <strong>"Render Uji Coba"</strong> untuk buka hasil render
+        server yang sebenarnya (1:1 sama dengan PDF, termasuk penyesuaian
+        otomatis ukuran nama kalau kepanjangan, yang tidak ditiru di preview live).
       </p>
     </div>
+  </div>
+</div>
+
+<!-- Modal: Hasil Render Server (terpisah dari kanvas live supaya tidak numpuk) -->
+<div x-show="modalTerbuka" x-cloak class="fixed inset-0 z-50 flex items-center justify-center p-4">
+  <div class="absolute inset-0 bg-stone-900/60" @click="modalTerbuka = false"></div>
+  <div class="relative bg-white rounded-2xl shadow-xl w-full max-w-3xl p-5 max-h-[90vh] overflow-auto">
+    <div class="flex items-center justify-between mb-3">
+      <h2 class="text-sm font-bold text-stone-800">Hasil Render Server (data contoh)</h2>
+      <button type="button" @click="modalTerbuka = false" class="text-stone-400 hover:text-stone-600 hover:bg-stone-100 w-8 h-8 flex items-center justify-center rounded-lg">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" class="w-4 h-4"><path d="M18 6 6 18M6 6l12 12"/></svg>
+      </button>
+    </div>
+    <div x-show="hasilRenderUrl">
+      <img :src="hasilRenderUrl" class="w-full rounded-lg border border-stone-200">
+    </div>
+    <p class="text-xs text-stone-400 mt-3">Ini hasil render 1:1 sama seperti PDF yang benar-benar dikirim ke peserta. Kalau posisinya masih kurang pas, tutup lalu geser lagi di kanvas live, lalu render ulang.</p>
   </div>
 </div>
 
@@ -298,44 +465,80 @@ function kalibrasi() {
   return {
     config: {{ config | tojson }},
     configTersimpan: {{ config | tojson }},   // snapshot baseline "tersimpan terakhir" - dipakai tombol Batalkan
-    previewUrl: null,
-    lebarGambar: null,   // lebar asli gambar template (px) - dibaca dari @load, dipakai konversi Ukuran Font ke px
+    hasilRenderUrl: null,   // hasil render server (dipakai modal), TERPISAH dari kanvas live
+    modalTerbuka: false,
+    lebarGambar: null,   // lebar ASLI gambar template (px) - buat readout angka "Ukuran Font" di panel kiri
+    lebarKanvas: 800,    // lebar TAMPILAN kanvas di layar (px, CSS) - buat scaling live overlay di kanan
     loading: false,
     pesan: "",
     pesanError: false,
 
+    // Data contoh dipakai konsisten baik di overlay live (client) maupun
+    // di "Render Uji Coba" (server) - lihat template_kalibrasi_preview()
+    // di routes_admin.py, harus SAMA PERSIS supaya keduanya cocok.
+    NAMA_CONTOH: "Contoh Nama Panjang Peserta",
+    TANGGAL_CONTOH: "30 Agustus 2026",
+    NOMOR_CONTOH: "001/CONTOH/VIII/2026",
+    KODE_CONTOH: "KT26-CONTOH",
+
+    daftarIdentitas: [
+      { key: "nim", contohLabel: "NIM : ", contohNilai: "0000000000" },
+      { key: "fakultas", contohLabel: "Fakultas : ", contohNilai: "Contoh Fakultas" },
+      { key: "universitas", contohLabel: "Universitas : ", contohNilai: "Contoh Universitas Perguruan Tinggi" },
+    ],
+
     daftarField: [
-      { key: "nama", label: "Nama", anchor: "center" },
-      { key: "nim", label: "NIM", anchor: "center" },
-      { key: "fakultas", label: "Fakultas", anchor: "center" },
-      { key: "universitas", label: "Universitas", anchor: "center" },
-      { key: "tanggal", label: "Tanggal Terbit", anchor: "center" },
-      { key: "nomor", label: "No. Sertifikat", anchor: "right" },
-      { key: "qr", label: "QR", anchor: "topleft" },
+      { key: "nama", anchor: "center" },
+      { key: "nim", anchor: "center" },
+      { key: "fakultas", anchor: "center" },
+      { key: "universitas", anchor: "center" },
+      { key: "tanggal", anchor: "center" },
+      { key: "nomor", anchor: "right" },
+      { key: "qr", anchor: "topleft" },
     ],
     draggingKey: null,
     guideV: false,
     _diffNomor: 0.02,
 
-    // Hitung posisi kotak (dalam % terhadap kanvas) dari config field ybs.
-    // "center"  -> field yang teksnya rata tengah (nama/nim/fakultas/dst)
-    // "right"   -> field yang teksnya rata kanan (nomor sertifikat)
-    // "topleft" -> field berupa kotak dari sudut kiri-atas (QR code)
-    gayaKotak(f) {
-      const c = this.config[f.key];
-      if (f.anchor === "right") {
-        return `left:${c.x * 100}%; top:${c.y1 * 100}%; transform: translate(-100%, -50%);`;
+    // Muat font ASLI (kustom milik template, atau bawaan sistem) lewat
+    // @font-face supaya overlay live di kanan memakai font yang sama
+    // persis dengan hasil PDF sebenarnya, bukan font browser sembarangan.
+    // Juga pasang ResizeObserver supaya lebarKanvas selalu akurat
+    // (dipakai mengonversi Ukuran Font ke px CSS yang benar di layar).
+    init() {
+      for (const jenis of ["nama", "bold", "reg", "tanggal"]) {
+        const url = `{{ url_for('admin.template_font_file', template_id=tpl.id, jenis='__JENIS__') }}`.replace("__JENIS__", jenis);
+        const style = document.createElement("style");
+        style.textContent = `@font-face { font-family: 'kalibrasi-${jenis}'; src: url('${url}'); font-display: swap; }`;
+        document.head.appendChild(style);
       }
-      if (f.anchor === "topleft") {
-        return `left:${c.x * 100}%; top:${c.y * 100}%; transform: translate(0, 0);`;
-      }
-      return `left:${c.x * 100}%; top:${c.y * 100}%; transform: translate(-50%, -50%);`;
+      this.$nextTick(() => {
+        this.lebarKanvas = this.$refs.kanvas.getBoundingClientRect().width;
+        if (window.ResizeObserver) {
+          new ResizeObserver((entries) => {
+            for (const entry of entries) this.lebarKanvas = entry.contentRect.width;
+          }).observe(this.$refs.kanvas);
+        } else {
+          window.addEventListener("resize", () => {
+            this.lebarKanvas = this.$refs.kanvas.getBoundingClientRect().width;
+          });
+        }
+      });
     },
 
-    koordinatTampil(f) {
-      const c = this.config[f.key];
+    koordinatTampil(key) {
+      const f = this.daftarField.find((x) => x.key === key);
+      const c = this.config[key];
       const y = f.anchor === "right" ? c.y1 : c.y;
       return `x: ${c.x.toFixed(3)}  y: ${y.toFixed(3)}`;
+    },
+
+    // Ukuran font untuk overlay LIVE di layar (beda dari pxDari() yang
+    // dipakai readout angka di panel kiri!) - ini diskalakan terhadap
+    // lebarKanvas (lebar tampilan di layar saat ini, bisa berubah-ubah
+    // sesuai lebar browser), bukan lebarGambar (lebar asli file gambar).
+    pxFontCss(frac) {
+      return Math.max(4, Math.round((frac || 0) * this.lebarKanvas)) + "px";
     },
 
     // --- Konversi Ukuran Font: pecahan (0-1, satuan asli sistem, relatif
@@ -412,7 +615,10 @@ function kalibrasi() {
       if (!this.draggingKey) return;
       this.draggingKey = null;
       this.guideV = false;
-      this.renderUjiCoba();
+      // TIDAK lagi auto-render ke server di sini - preview live (CSS) di
+      // kanvas sudah cukup responsif sendiri. Render server cuma dipanggil
+      // saat admin sengaja klik "Render Uji Coba" untuk cek hasil akhir
+      // di modal terpisah (lihat renderUjiCoba()).
     },
 
     // Batalkan HANYA seretan yang sedang berlangsung saat ini (tekan Esc
@@ -442,7 +648,6 @@ function kalibrasi() {
       if (!this.adaPerubahan()) return;
       if (!confirm("Batalkan semua perubahan yang belum disimpan dan kembali ke kalibrasi tersimpan terakhir?")) return;
       this.config = JSON.parse(JSON.stringify(this.configTersimpan));
-      this.previewUrl = null; // tampilkan kembali gambar template asli (belum ada perubahan dirender)
       this.pesan = "Perubahan dibatalkan, kembali ke kalibrasi tersimpan.";
       this.pesanError = false;
     },
@@ -503,7 +708,9 @@ function kalibrasi() {
         });
         if (!res.ok) throw new Error("Gagal merender pratinjau");
         const blob = await res.blob();
-        this.previewUrl = URL.createObjectURL(blob);
+        if (this.hasilRenderUrl) URL.revokeObjectURL(this.hasilRenderUrl); // bersihkan blob lama, cegah kebocoran memori
+        this.hasilRenderUrl = URL.createObjectURL(blob);
+        this.modalTerbuka = true;
       } catch (e) {
         this.pesan = "Gagal merender: " + e.message;
         this.pesanError = true;
@@ -533,6 +740,72 @@ function kalibrasi() {
       }
     },
   }
+}
+
+function deteksiDiff() {
+  return {
+    modalUpload: false,
+    modalLabel: false,
+    fileContoh: null,
+    fileKosong: null,
+    loading: false,
+    error: "",
+    kotak: [],
+    gambarContohUrl: "",
+    menerapkan: false,
+    errorTerapkan: "",
+
+    async jalankanDeteksi() {
+      this.loading = true;
+      this.error = "";
+      try {
+        const fd = new FormData();
+        fd.append("gambar_contoh", this.fileContoh);
+        fd.append("gambar_kosong", this.fileKosong);
+        const res = await fetch("{{ url_for('admin.template_deteksi_diff', template_id=tpl.id) }}", {
+          method: "POST", body: fd,
+        });
+        const json = await res.json();
+        if (!json.ok) throw new Error(json.error || "Deteksi gagal.");
+        this.kotak = json.kotak.map((k) => ({ ...k, field: "" }));
+        this.gambarContohUrl = json.gambar_contoh_url + "?t=" + Date.now();
+        this.modalUpload = false;
+        this.modalLabel = true;
+      } catch (e) {
+        this.error = e.message;
+      } finally {
+        this.loading = false;
+      }
+    },
+
+    adaYangDipilih() {
+      return this.kotak.some((k) => k.field);
+    },
+
+    async terapkanHasil() {
+      this.menerapkan = true;
+      this.errorTerapkan = "";
+      try {
+        const pemetaan = {};
+        for (const k of this.kotak) {
+          if (!k.field) continue;
+          if (!pemetaan[k.field]) pemetaan[k.field] = [];
+          pemetaan[k.field].push(k.id);
+        }
+        const res = await fetch("{{ url_for('admin.template_deteksi_diff_terapkan', template_id=tpl.id) }}", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ pemetaan, kotak: this.kotak }),
+        });
+        const json = await res.json();
+        if (!json.ok) throw new Error(json.error || "Gagal menerapkan.");
+        window.location.reload();
+      } catch (e) {
+        this.errorTerapkan = e.message;
+        this.menerapkan = false;
+      }
+    },
+  };
 }
 </script>
 {% endblock %}

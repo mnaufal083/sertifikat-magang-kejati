@@ -26,7 +26,7 @@ from datetime import datetime
 
 from flask import (
     Blueprint, render_template, request, redirect, url_for, session,
-    flash, current_app, send_file, jsonify
+    flash, current_app, send_file, jsonify, abort
 )
 from werkzeug.utils import secure_filename
 
@@ -34,7 +34,10 @@ from app.extensions import db
 from app.models import Periode, Peserta, TemplateSertifikat
 from app.auth import admin_required
 from app.utils import baca_excel_peserta, proses_upload_peserta, cek_kode_verifikasi
-from app.certgen.generator import generate_certificate_image, DEFAULT_FIELD_CONFIG
+from app.certgen.generator import (
+    generate_certificate_image, DEFAULT_FIELD_CONFIG,
+    FONT_NAME_DEFAULT, FONT_BOLD_DEFAULT, FONT_REG_DEFAULT,
+)
 
 admin_bp = Blueprint("admin", __name__, url_prefix="/admin")
 
@@ -358,6 +361,29 @@ def template_preview_image(template_id):
     return _send_file(tpl.preview_path)
 
 
+@admin_bp.route("/template/<int:template_id>/font/<jenis>")
+@admin_required
+def template_font_file(template_id, jenis):
+    """Sajikan file font (kustom milik template, atau bawaan sistem kalau
+    template belum unggah yang kustom) ke browser - dipakai halaman
+    kalibrasi untuk memuat font ASLI lewat @font-face, supaya pratinjau
+    langsung di kanvas (drag & ubah ukuran) tampil dengan font yang
+    benar-benar sama seperti hasil render PDF sebenarnya, bukan cuma
+    font browser sembarangan."""
+    from flask import send_file as _send_file
+    tpl = TemplateSertifikat.query.get_or_404(template_id)
+    peta = {
+        "nama": tpl.font_nama_path or FONT_NAME_DEFAULT,
+        "bold": tpl.font_bold_path or FONT_BOLD_DEFAULT,
+        "reg": tpl.font_reg_path or FONT_REG_DEFAULT,
+        "tanggal": tpl.font_tanggal_path or FONT_REG_DEFAULT,
+    }
+    path = peta.get(jenis)
+    if not path or not os.path.exists(path):
+        abort(404)
+    return _send_file(path)
+
+
 ALLOWED_TEMPLATE_EXT = {"pdf", "png", "jpg", "jpeg"}
 ALLOWED_FONT_EXT = {"ttf", "otf"}
 
@@ -533,6 +559,159 @@ def template_deteksi_ulang(template_id):
     except Exception as e:
         flash(f"Deteksi otomatis gagal dijalankan ({e}).", "error")
     return redirect(url_for("admin.template_kalibrasi", template_id=tpl.id))
+
+
+def _path_temp_diff(template_id, jenis):
+    """jenis: 'contoh' atau 'kosong'. Lokasi file sementara khusus fitur
+    deteksi 2-gambar, satu set per template (ditimpa kalau admin unggah
+    ulang) - dibersihkan/dipindah permanen saat 'Terapkan Hasil' diklik."""
+    folder = os.path.join(current_app.config["UPLOAD_TEMPLATE_DIR"], "_diff_tmp")
+    os.makedirs(folder, exist_ok=True)
+    return os.path.join(folder, f"{template_id}_{jenis}.png")
+
+
+@admin_bp.route("/template/<int:template_id>/deteksi-diff", methods=["POST"])
+@admin_required
+def template_deteksi_diff(template_id):
+    """Langkah 1 dari fitur 'Deteksi dari 2 Gambar': terima 2 file
+    (versi contoh + versi polos), simpan sementara, jalankan diff_detect,
+    kembalikan daftar kotak yang terdeteksi (JSON) untuk admin beri label
+    field lewat UI di halaman kalibrasi. Belum mengubah apa pun secara
+    permanen di template - itu baru terjadi kalau admin klik "Terapkan
+    Hasil" (lihat template_deteksi_diff_terapkan)."""
+    tpl = TemplateSertifikat.query.get_or_404(template_id)
+    f_contoh = request.files.get("gambar_contoh")
+    f_kosong = request.files.get("gambar_kosong")
+    if not f_contoh or not f_contoh.filename or not f_kosong or not f_kosong.filename:
+        return jsonify({"ok": False, "error": "Unggah kedua file: versi contoh dan versi polos."}), 400
+    for f in (f_contoh, f_kosong):
+        if not _ext_ok(f.filename, {"png", "jpg", "jpeg"}):
+            return jsonify({"ok": False, "error": f"Format {f.filename} tidak didukung - pakai PNG atau JPG."}), 400
+
+    path_contoh = _path_temp_diff(template_id, "contoh")
+    path_kosong = _path_temp_diff(template_id, "kosong")
+    f_contoh.save(path_contoh)
+    f_kosong.save(path_kosong)
+
+    try:
+        from app.certgen.diff_detect import deteksi_dari_dua_gambar
+        kotak, diresize = deteksi_dari_dua_gambar(path_contoh, path_kosong)
+    except Exception as e:
+        return jsonify({"ok": False, "error": f"Deteksi gagal: {e}"}), 400
+
+    if not kotak:
+        return jsonify({"ok": False, "error": "Tidak ada perbedaan terdeteksi di antara kedua gambar. Pastikan versi contoh & polos memang berbeda teksnya."}), 400
+
+    return jsonify({
+        "ok": True, "kotak": kotak, "diresize": diresize,
+        "gambar_contoh_url": url_for("admin.template_deteksi_diff_temp", template_id=template_id, jenis="contoh"),
+    })
+
+
+@admin_bp.route("/template/<int:template_id>/deteksi-diff/temp/<jenis>")
+@admin_required
+def template_deteksi_diff_temp(template_id, jenis):
+    """Sajikan file sementara (contoh/kosong) untuk ditampilkan di modal
+    pratinjau kotak deteksi - dipanggil browser lewat <img src=...>."""
+    from flask import send_file as _send_file
+    path = _path_temp_diff(template_id, jenis if jenis in ("contoh", "kosong") else "contoh")
+    if not os.path.exists(path):
+        abort(404)
+    return _send_file(path)
+
+
+@admin_bp.route("/template/<int:template_id>/deteksi-diff/terapkan", methods=["POST"])
+@admin_required
+def template_deteksi_diff_terapkan(template_id):
+    """Langkah 2: admin sudah memberi label field ke tiap kotak lewat
+    dropdown di UI. Terima pemetaan {field: [id_kotak, ...]}, lalu:
+      1. Gabungkan bounding box semua kotak yang dilabeli field yang sama
+         (kalau OCR/diff memecah satu field jadi >1 kotak, mis. label
+         "NIM :" & nilainya kepisah) jadi satu titik tengah + perkiraan
+         ukuran font dari tinggi kotak.
+      2. Update field_config template dengan posisi & ukuran baru itu.
+      3. Ganti preview_path template ke gambar VERSI POLOS yang barusan
+         diunggah (karena sudah terbukti bersih - hasil diff yang jadi
+         dasar deteksi ini) - jadi tidak perlu lagi "Bersihkan Area"
+         manual, sekaligus posisi & background beres dalam satu langkah.
+    """
+    tpl = TemplateSertifikat.query.get_or_404(template_id)
+    data = request.get_json(force=True)
+    pemetaan = data.get("pemetaan", {})   # {"nama": [0], "nim": [1], ...}
+    kotak_list = data.get("kotak", [])    # daftar kotak asli (dikirim balik dari klien)
+
+    path_kosong = _path_temp_diff(template_id, "kosong")
+    if not os.path.exists(path_kosong):
+        return jsonify({"ok": False, "error": "File sementara sudah tidak ada, silakan unggah ulang kedua gambar."}), 400
+
+    kotak_by_id = {k["id"]: k for k in kotak_list}
+    config = tpl.get_field_config()
+    # Template lama (dibuat sebelum field seperti "tanggal" ditambahkan ke
+    # sistem) belum tentu punya semua key di field_config_json tersimpannya.
+    # Isi dulu dengan bawaan supaya field APAPUN yang admin pilih di
+    # dropdown pelabelan tetap bisa diproses, bukan malah dilewati diam-diam.
+    for k, v in DEFAULT_FIELD_CONFIG.items():
+        config.setdefault(k, v)
+    field_terupdate = []
+
+    for field, id_list in pemetaan.items():
+        if field not in config or not id_list:
+            continue
+        kotak_terpilih = [kotak_by_id[i] for i in id_list if i in kotak_by_id]
+        if not kotak_terpilih:
+            continue
+
+        # Gabung bounding box (union) dari semua kotak yang dilabeli field ini
+        x0 = min(k["x"] - k["w"] / 2 for k in kotak_terpilih)
+        x1 = max(k["x"] + k["w"] / 2 for k in kotak_terpilih)
+        y0 = min(k["y"] - k["h"] / 2 for k in kotak_terpilih)
+        y1 = max(k["y"] + k["h"] / 2 for k in kotak_terpilih)
+        x_tengah = round((x0 + x1) / 2, 4)
+        y_tengah = round((y0 + y1) / 2, 4)
+        tinggi = y1 - y0
+
+        # Perkiraan ukuran font dari tinggi kotak (faktor 0.8 - tinggi
+        # kotak biasanya sedikit lebih besar dari tinggi huruf kapital
+        # karena ikut menangkap ascender/descender). Titik awal yang
+        # jauh lebih baik daripada nilai bawaan sistem - admin masih
+        # bebas menyesuaikan lewat stepper px seperti biasa.
+        perkiraan_size = round(tinggi * 0.8, 4)
+
+        if field == "nama":
+            config["nama"]["x"] = x_tengah
+            config["nama"]["y"] = y_tengah
+            if perkiraan_size > 0:
+                config["nama"]["max_size"] = perkiraan_size
+                config["nama"]["min_size"] = round(perkiraan_size * 0.55, 4)
+        elif field == "nomor":
+            config["nomor"]["x"] = round(x1, 4)  # rata kanan -> pakai tepi kanan kotak
+            config["nomor"]["y1"] = y_tengah
+            config["nomor"]["y2"] = round(y_tengah + max(tinggi, 0.02), 4)
+            config["nomor"]["tampilkan"] = True
+            if perkiraan_size > 0:
+                config["nomor"]["size"] = perkiraan_size
+        else:
+            config[field]["x"] = x_tengah
+            config[field]["y"] = y_tengah
+            if field == "tanggal":
+                config["tanggal"]["tampilkan"] = True
+            if perkiraan_size > 0 and "size" in config[field]:
+                config[field]["size"] = perkiraan_size
+
+        field_terupdate.append(field)
+
+    tpl.set_field_config(config)
+
+    # Pindahkan gambar "polos" jadi preview_path permanen template ini
+    import shutil
+    stamp = datetime.utcnow().strftime("%Y%m%d%H%M%S")
+    path_permanen = os.path.join(current_app.config["UPLOAD_TEMPLATE_DIR"], f"{stamp}_polos_{template_id}.png")
+    shutil.copy(path_kosong, path_permanen)
+    tpl.preview_path = path_permanen
+
+    db.session.commit()
+
+    return jsonify({"ok": True, "field_terupdate": field_terupdate, "config": config})
 
 
 @admin_bp.route("/template/<int:template_id>/kalibrasi", methods=["GET"])
