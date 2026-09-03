@@ -1,24 +1,33 @@
 # Sistem Sertifikat Magang Otomatis — Kejaksaan Tinggi Jawa Tengah
 
 Aplikasi web **full-stack** yang bisa langsung dijalankan, mengimplementasikan
-alur verifikasi **Nama + NIM + No. WhatsApp (pencocokan identitas) → OTP via
-Email → Sertifikat dikirim ke Email**. No. WhatsApp hanya dipakai untuk
-mencocokkan data peserta ke data yang diunggah admin - kode OTP dan file
-sertifikat sama-sama dikirim ke email (bukan WhatsApp), karena pengiriman OTP
-lewat WhatsApp API berbayar per pesan. Backend: **Flask (Python)** + **SQLite**. Tampilan:
-**Tailwind CSS + Alpine.js + Flatpickr** (di-build lokal, bukan lewat CDN
-runtime — lihat penjelasan di bagian 6).
+alur verifikasi **Nama + NIM + Email (pencocokan identitas) → OTP via
+Email → Sertifikat dikirim ke Email**. Kode OTP dan file sertifikat
+sama-sama dikirim ke **email** peserta, karena satu jalur SMTP yang sama
+bisa dipakai untuk keduanya (lebih murah & lebih sederhana dibanding
+kanal lain yang berbayar per pesan). Backend: **Flask (Python)** +
+**SQLite**. Tampilan: **Tailwind CSS + Alpine.js + Flatpickr** (di-build
+lokal, bukan lewat CDN runtime — lihat penjelasan di bagian 6).
+
+> **Catatan revisi dokumentasi**: versi README ini ditulis ulang
+> berdasarkan pembacaan langsung kode di `app/routes_public.py` dan
+> `app/utils.py` per Sep 2026, karena draf sebelumnya sempat tidak
+> sinkron dengan kode (masih menyebut "No. WhatsApp" sebagai field
+> verifikasi, padahal kode sudah dipindah ke Email — lihat Bagian 4b
+> untuk detail status field `no_wa` yang masih tersisa di database).
 
 ---
 
 ## 1. Alur Sistem (Ringkasan)
 
 **Peserta magang:**
-1. Buka portal `/ambil-sertifikat`, isi Nama, NIM, dan No. WhatsApp.
-2. Sistem mencocokkan ketiganya ke data yang diunggah admin (No. WA di
-   sini murni untuk verifikasi identitas), lalu mengirim kode OTP 6-digit
-   ke **email** peserta yang terdaftar.
-3. Peserta memasukkan kode OTP.
+1. Buka portal `/ambil-sertifikat`, isi **Nama, NIM, dan Email**.
+2. Sistem mencocokkan ketiganya ke data yang diunggah admin (NIM dicari
+   persis, Nama & Email dicocokkan tanpa peka besar-kecil huruf/spasi
+   berlebih), lalu mengirim kode OTP 6-digit ke **email** peserta yang
+   terdaftar.
+3. Peserta memasukkan kode OTP (kedaluwarsa 5 menit, maksimal 5x
+   percobaan salah sebelum harus minta kode baru).
 4. Begitu benar, sertifikat PDF otomatis dibuat dan **dikirim sebagai
    lampiran ke email** yang sama (bukan diunduh langsung dari
    browser) — meniru pola pengiriman sertifikat bootcamp/seminar resmi.
@@ -93,7 +102,8 @@ python run.py
 
 Buka `http://127.0.0.1:5000`:
 - **Sisi peserta**: `http://127.0.0.1:5000/ambil-sertifikat` — gunakan
-  salah satu data yang dicetak oleh `scripts/seed.py` di terminal.
+  salah satu data (Nama, NIM, Email) yang dicetak oleh `scripts/seed.py`
+  di terminal.
 - **Sisi admin**: `http://127.0.0.1:5000/admin` (login: `admin` / `admin123`)
 
 ---
@@ -108,7 +118,43 @@ Kolom yang dibutuhkan (nama kolom di baris pertama, tidak peka besar-kecil huruf
 
 Bisa diunduh langsung dari panel admin (tombol "Unduh contoh file" di
 halaman Buat Periode / Data Peserta), atau lewat `/admin/contoh-excel`.
-Nomor WA format `08xxx` otomatis dinormalisasi ke `62xxx` oleh sistem.
+Nomor WA format `08xxx` otomatis dinormalisasi ke `62xxx` oleh sistem
+saat disimpan.
+
+**Kolom `No. WA` tetap wajib diisi di file Excel** (baris upload akan
+ditolak kalau kosong) — tapi lihat **Bagian 4b** di bawah untuk
+penjelasan kenapa ini sekarang murni data pelengkap, bukan lagi bagian
+dari alur verifikasi peserta.
+
+### 4b. Catatan Penting: Status Field "No. WA" (Legacy, Non-Fungsional)
+
+Sistem ini sebelumnya memakai **Nama + NIM + No. WhatsApp** sebagai
+kombinasi verifikasi identitas peserta. Ini **sudah diganti ke Nama +
+NIM + Email** di kode (`app/routes_public.py` → `kirim_otp()` dan
+`app/utils.py` → `cari_peserta_untuk_verifikasi()`), supaya field yang
+diminta di awal konsisten dengan email yang memang jadi tujuan
+pengiriman OTP & sertifikat.
+
+Namun proses migrasi ini **belum tuntas dibersihkan** dari beberapa
+tempat lain:
+
+- Kolom `no_wa` di model `Peserta` (`app/models.py`) **masih ada dan
+  wajib diisi** (`nullable=False`).
+- Kolom `No. WA` di format Excel **masih wajib** (`KOLOM_WAJIB` di
+  `app/utils.py`) — upload akan gagal kalau kolom ini tidak ada.
+- Tabel Data Peserta di panel admin masih menampilkannya sebagai kolom
+  "Akun/No.WA".
+- **Yang penting**: fungsi pencocokan `cari_peserta_untuk_verifikasi()`
+  **tidak pernah membaca `no_wa` sama sekali** — hanya query by NIM,
+  lalu cocokkan Nama & Email. Jadi No. WA sekarang **tidak berfungsi
+  apa pun** dalam alur verifikasi maupun pengiriman; sepenuhnya data
+  pasif yang ikut tersimpan dari proses upload Excel.
+
+Ini bagus untuk diketahui sebelum menyesuaikan sistem ke kebutuhan Anda
+— kalau institusi Anda tidak butuh mencatat nomor WA peserta sama
+sekali, kolom ini aman dihapus dari model, form Excel, dan tampilan
+admin tanpa memengaruhi alur verifikasi/OTP/pengiriman sertifikat yang
+sudah berjalan lewat Email.
 
 ---
 
@@ -273,14 +319,11 @@ lanjutan menggunakan library seperti `pyHanko`.
 
 ## 8. Mengaktifkan OTP & Pengiriman Email Sertifikat Sungguhan
 
-Sistem sebelumnya sempat memakai OTP via WhatsApp, tapi **diganti ke
-Email** karena pengiriman OTP lewat WhatsApp Business API berbayar per
-pesan, sedangkan SMTP email jauh lebih murah (bahkan gratis lewat akun
-Gmail biasa) dan satu jalur SMTP yang sama bisa dipakai baik untuk kode
-OTP maupun lampiran PDF sertifikat. No. WhatsApp peserta **tetap ada**
-di form & database, tapi sekarang murni untuk mencocokkan identitas
-peserta ke data yang diunggah admin - tidak lagi dipakai untuk mengirim
-apa pun.
+Kode OTP dan file PDF sertifikat sama-sama dikirim lewat **Email** (SMTP)
+— satu jalur pengiriman yang sama dipakai untuk keduanya. No. WhatsApp
+peserta **tidak dipakai untuk mengirim apa pun** (lihat Bagian 4b soal
+statusnya yang sekarang murni data pelengkap, bukan bagian dari
+verifikasi ataupun pengiriman).
 
 Saat ini (`EMAIL_DEMO_MODE=true`), kode OTP ditampilkan langsung di
 layar dan file PDF sertifikat disimpan ke `data/generated/` (bisa
@@ -314,11 +357,11 @@ sertifikat-magang-kejati/
 ├── package.json, tailwind.config.js   # hanya dipakai saat build ulang CSS
 ├── app/
 │   ├── __init__.py               # app factory Flask
-│   ├── models.py                 # Periode, TemplateSertifikat, Peserta, OtpCode
-│   ├── utils.py                  # nomor sertifikat, OTP WA, email, import Excel
+│   ├── models.py                 # Periode, TemplateSertifikat, Peserta, OtpCode, AdminUser
+│   ├── utils.py                  # nomor sertifikat, OTP Email, kirim sertifikat, import Excel
 │   ├── routes_admin.py           # semua route /admin/...
 │   ├── routes_public.py          # semua route publik (/ambil-sertifikat, dst.)
-│   ├── certgen/generator.py      # inti penempelan teks (berbasis pecahan 0-1)
+│   ├── certgen/generator.py      # inti penempelan teks + watermark (berbasis pecahan 0-1)
 │   ├── assets/
 │   │   ├── fonts/                 # font bawaan (PinyonScript, Cardo)
 │   │   ├── template/               # template bawaan (clean_bg.png)
@@ -336,15 +379,50 @@ sertifikat-magang-kejati/
     └── generated/                 # PDF hasil generate (mode demo)
 ```
 
+### Peta Endpoint (ringkas)
+
+**Publik** (`routes_public.py`):
+| Route | Fungsi |
+|---|---|
+| `GET /ambil-sertifikat` | Form Nama + NIM + Email |
+| `POST /ambil-sertifikat/kirim-otp` | Cocokkan data, kirim OTP ke email |
+| `GET/POST /ambil-sertifikat/otp` | Form & verifikasi kode OTP |
+| `GET /ambil-sertifikat/terkirim` | Konfirmasi sertifikat sudah dikirim |
+| `GET /cek-sertifikat` | Verifikasi keaslian publik via kode verifikasi |
+| `GET /demo/unduh/<no_ref_flat>` | Unduh manual hasil generate (khusus `EMAIL_DEMO_MODE=true`) |
+
+**Admin** (`routes_admin.py`, prefix `/admin`, butuh login session):
+| Route | Fungsi |
+|---|---|
+| `GET/POST /login`, `/logout` | Autentikasi admin |
+| `GET /periode` | Daftar periode + ringkasan status |
+| `GET/POST /periode/baru` | Buat periode + upload Excel peserta (satu form) |
+| `GET /periode/<id>` | Detail periode + tabel Data Peserta |
+| `POST /periode/<id>/upload-tambahan` | Tambah peserta susulan ke periode yang sudah ada |
+| `GET/POST /periode/<id>/edit`, `POST /periode/<id>/hapus` | Kelola periode |
+| `POST /peserta/<id>/reset`, `POST /peserta/<id>/hapus` | Kelola peserta individual |
+| `GET /template` | Daftar Template Sertifikat |
+| `GET/POST /template/baru` | Unggah desain baru (+ deteksi OCR otomatis) |
+| `GET /template/<id>/kalibrasi`, `POST .../kalibrasi/simpan` | Kalibrasi posisi field |
+| `POST /template/<id>/kalibrasi/preview` | Render uji coba (AJAX, tanpa simpan) |
+| `POST /template/<id>/bersihkan-area` | Hapus area gambar (permanen) untuk field tertentu |
+| `POST /template/<id>/deteksi-ulang` | Jalankan ulang deteksi OCR |
+| `GET /arsip`, `/arsip/<id>` | Arsip periode selesai + unduh sertifikat per peserta |
+| `GET /contoh-excel` | Unduh contoh format Excel peserta |
+
+---
+
 ## 10. Keamanan yang Sudah Diimplementasikan
 
-- Kombinasi Nama + NIM + No. WA harus **sama persis** dengan data admin
-  sebelum OTP dikirim (mencegah tebak-NIM saja).
+- Kombinasi Nama + NIM + Email harus **cocok** dengan data admin sebelum
+  OTP dikirim (NIM dicari persis; Nama & Email dicocokkan tanpa peka
+  besar-kecil huruf/spasi berlebih) — mencegah tebak-NIM saja.
 - Kode OTP di-hash (bukan teks polos), kedaluwarsa otomatis (default 5
   menit), maksimal 5x percobaan salah sebelum harus minta kode baru.
 - Sertifikat hanya bisa diklaim **satu kali** per peserta.
 - Nomor sertifikat & kode verifikasi bisa dicek publik lewat
   `/cek-sertifikat` untuk transparansi ke pihak ketiga.
+- Watermark forensik tertanam di setiap sertifikat (lihat Bagian 7b).
 - Login admin terpisah dari akses peserta (session-based).
 
 **Catatan jujur soal keamanan produksi**: ganti `SECRET_KEY` di `.env`
@@ -420,16 +498,18 @@ Pilihan yang umum dipakai untuk hosting Flask + Supabase:
 
 ---
 
-## 12. Tahapan Implementasi ke Depan
+## 12. Tahapan Implementasi & Status Dokumentasi
 
 | Tahap | Status |
 |---|---|
-| Alur verifikasi Nama+NIM+WA (cocokkan) → OTP Email → email sertifikat | ✓ Selesai & teruji |
+| Alur verifikasi Nama+NIM+Email (cocokkan) → OTP Email → email sertifikat | ✓ Selesai & teruji |
 | Manajemen periode + upload Excel dalam satu langkah | ✓ Selesai & teruji |
 | Tabel Data Peserta ringkas (No.Ref/Nama/NIM/Akun/Waktu/Status/Aksi) | ✓ Selesai & teruji |
 | Manajemen Template Sertifikat (upload + kalibrasi + live preview) | ✓ Selesai & teruji |
+| Watermark forensik anti-pemalsuan | ✓ Selesai |
 | Tampilan modern (Tailwind + Alpine + Flatpickr, build lokal) | ✓ Selesai |
 | Navigasi "Kembali ke Beranda" di halaman hasil (sukses/sudah diambil) | ✓ Selesai |
+| Bersihkan sisa field `no_wa` (model/Excel/tampilan admin) yang sudah tidak dipakai verifikasi | ⚠ Belum — lihat Bagian 4b |
 | Integrasi SMTP email sungguhan (OTP & sertifikat) | Menunggu akses SMTP/App Password instansi |
 | Migrasi ke Supabase (kalau dipakai multi-admin) | Menunggu keputusan skala pemakaian |
 | Hosting produksi (Render/VPS instansi) | Menunggu keputusan lingkungan hosting |

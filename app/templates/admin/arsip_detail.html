@@ -1,0 +1,45 @@
+{% extends "admin/base_admin.html" %}
+{% block title %}Arsip — {{ periode.nama_periode }}{% endblock %}
+{% block content %}
+<a href="{{ url_for('admin.arsip_list') }}" class="text-sm text-stone-500 hover:text-brand-600">← Kembali ke Arsip Sertifikat</a>
+<h1 class="text-2xl font-bold text-stone-800 mt-2 mb-1">{{ periode.nama_periode }}</h1>
+<p class="text-stone-500 text-sm mb-6">
+  {{ peserta_list|length }} sertifikat tersedia untuk diunduh. Setiap file digenerate ulang saat
+  diunduh, jadi selalu sesuai kalibrasi template terkini.
+</p>
+
+<div class="bg-white rounded-xl border border-stone-200 overflow-hidden">
+  <table class="w-full text-sm">
+    <thead class="bg-stone-50 text-stone-500 text-xs uppercase tracking-wide">
+      <tr>
+        <th class="text-left px-4 py-3 font-medium">No. Ref</th>
+        <th class="text-left px-4 py-3 font-medium">Nama</th>
+        <th class="text-left px-4 py-3 font-medium">NIM</th>
+        <th class="text-left px-4 py-3 font-medium">Waktu Diambil</th>
+        <th class="text-left px-4 py-3 font-medium">Aksi</th>
+      </tr>
+    </thead>
+    <tbody class="divide-y divide-stone-100">
+      {% for p in peserta_list %}
+      <tr class="hover:bg-stone-50">
+        <td class="px-4 py-3 font-mono text-xs text-stone-500">{{ p.no_ref }}</td>
+        <td class="px-4 py-3 font-medium text-stone-700">{{ p.nama }}</td>
+        <td class="px-4 py-3 text-stone-500">{{ p.nim }}</td>
+        <td class="px-4 py-3 text-stone-500">{{ (p.waktu_diambil | wib).strftime('%d/%m/%y %H:%M') if p.waktu_diambil else '—' }}</td>
+        <td class="px-4 py-3">
+          <a href="{{ url_for('admin.arsip_unduh_satu', peserta_id=p.id) }}"
+             class="inline-flex items-center gap-1.5 text-xs bg-brand-50 hover:bg-brand-100 text-brand-700 font-medium px-3 py-1.5 rounded-lg transition">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-3.5 h-3.5">
+              <path d="M12 3v12m0 0-4-4m4 4 4-4M5 21h14"/>
+            </svg>
+            Unduh PDF
+          </a>
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="5" class="px-4 py-10 text-center text-stone-400">Belum ada peserta yang mengambil sertifikat di periode ini.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

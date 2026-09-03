@@ -20,6 +20,7 @@ from flask import (
     Blueprint, render_template, request, redirect, url_for, session,
     flash, current_app
 )
+from datetime import datetime
 
 from app.extensions import db
 from app.models import Peserta
@@ -49,7 +50,7 @@ def _no_cache_alur_klaim(response):
 
 @public_bp.route("/")
 def index():
-    return render_template("public/index.html")
+    return render_template("public/index.html", tahun_sekarang=datetime.utcnow().year)
 
 
 # ------------------------------------------------------- 1. form klaim --

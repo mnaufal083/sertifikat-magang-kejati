@@ -61,7 +61,15 @@ DEFAULT_FIELD_CONFIG = {
         "x": 0.5, "y": 0.6844,
         "size": 0.01800,
         "color": "#5e4426",
-        "tampilkan": True,
+        # Default MATI: field Tanggal Terbit sengaja tidak lagi
+        # dideteksi/dicocokkan otomatis (lihat diff_detect.py) - tanggal
+        # dianggap bagian tetap dari desain template (di-bakar di gambar
+        # latar seperti teks statis lain), bukan field dinamis per
+        # periode. Kalau admin tetap mau memakainya sebagai field
+        # dinamis, tetap bisa diaktifkan & diatur manual lewat halaman
+        # Kalibrasi kapan saja - kemampuannya tidak dihapus, cuma tidak
+        # lagi otomatis dinyalakan/ditebak posisinya saat upload.
+        "tampilkan": False,
     },
     "nomor": {
         "x": 0.9235, "y1": 0.0302, "y2": 0.0504,

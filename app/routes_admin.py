@@ -33,9 +33,9 @@ from werkzeug.utils import secure_filename
 from app.extensions import db
 from app.models import Periode, Peserta, TemplateSertifikat
 from app.auth import admin_required
-from app.utils import baca_excel_peserta, proses_upload_peserta, cek_kode_verifikasi
+from app.utils import baca_excel_peserta, proses_upload_peserta, cek_kode_verifikasi, format_tanggal_indonesia
 from app.certgen.generator import (
-    generate_certificate_image, DEFAULT_FIELD_CONFIG,
+    generate_certificate_image, generate_certificate_pdf_bytes, DEFAULT_FIELD_CONFIG,
     FONT_NAME_DEFAULT, FONT_BOLD_DEFAULT, FONT_REG_DEFAULT,
 )
 
@@ -398,60 +398,15 @@ def template_baru():
     if request.method == "GET":
         return render_template("admin/template_form.html")
 
-    nama = request.form.get("nama_template", "").strip()
-    file_desain = request.files.get("file_desain")
+    mode = request.form.get("mode", "otomatis")
+    if mode == "otomatis":
+        return _template_baru_otomatis()
+    return _template_baru_manual()
 
-    if not nama or not file_desain or not file_desain.filename:
-        flash("Nama template dan file desain wajib diisi.", "error")
-        return redirect(url_for("admin.template_baru"))
 
-    if not _ext_ok(file_desain.filename, ALLOWED_TEMPLATE_EXT):
-        flash("Format file desain harus PDF, PNG, atau JPG.", "error")
-        return redirect(url_for("admin.template_baru"))
-
-    os.makedirs(current_app.config["UPLOAD_TEMPLATE_DIR"], exist_ok=True)
-    fname = secure_filename(file_desain.filename)
-    stamp = datetime.utcnow().strftime("%Y%m%d%H%M%S")
-    raw_path = os.path.join(current_app.config["UPLOAD_TEMPLATE_DIR"], f"{stamp}_{fname}")
-    file_desain.save(raw_path)
-
-    # Kalau PDF, render ke PNG resolusi tinggi (300 DPI) dulu.
-    if raw_path.lower().endswith(".pdf"):
-        try:
-            from pdf2image import convert_from_path
-            pages = convert_from_path(raw_path, dpi=300)
-            preview_path = raw_path.rsplit(".", 1)[0] + ".png"
-            pages[0].save(preview_path, "PNG")
-        except Exception as e:
-            flash(
-                f"Gagal mengonversi PDF ke gambar ({e}). Pastikan Poppler sudah "
-                f"terpasang (lihat README bagian Prasyarat), atau unggah file "
-                f"PNG/JPG langsung sebagai alternatif.", "error"
-            )
-            return redirect(url_for("admin.template_baru"))
-    else:
-        preview_path = raw_path
-
-    # Peringatan resolusi rendah, supaya hasil cetak tetap tajam (HD).
-    from PIL import Image
-    with Image.open(preview_path) as im:
-        w, h = im.size
-    if w < 2400:
-        flash(
-            f"Perhatian: lebar gambar hanya {w}px. Untuk hasil sertifikat yang "
-            f"tajam saat dicetak, disarankan unggah desain dengan lebar minimal "
-            f"~2400px (setara 300 DPI ukuran A4). Template tetap tersimpan dan "
-            f"bisa dipakai.", "error"
-        )
-
-    # Font kustom (opsional). Form sekarang cuma minta 3 file (Nama,
-    # Identitas, Tanggal) - "Identitas" dipakai untuk font_bold_path
-    # (label mis. "NIM :") maupun font_reg_path (isian mis. "2305110041")
-    # SEKALIGUS, karena di desain resmi Kejati Jateng keduanya memang
-    # font yang sama; menyimpannya di 2 kolom terpisah tetap dipertahankan
-    # di database supaya template lama yang sudah terlanjur pakai font
-    # label & nilai BERBEDA tidak rusak (tidak ada field di form baru
-    # untuk mengatur itu lagi, tapi datanya tidak dihapus).
+def _simpan_font_kustom(stamp):
+    """Dipakai bersama oleh mode Otomatis & Manual - upload 3 font
+    opsional (Nama/Identitas/Tanggal), sama persis untuk keduanya."""
     os.makedirs(current_app.config["UPLOAD_FONT_DIR"], exist_ok=True)
     font_paths = {}
     for form_key, target_fields in [
@@ -469,6 +424,159 @@ def template_baru():
             f.save(fpath)
             for target in target_fields:
                 font_paths[target] = fpath
+    return font_paths
+
+
+def _simpan_gambar_desain(file_obj, stamp, label_untuk_pesan):
+    """Simpan 1 file desain (PDF/PNG/JPG), konversi PDF->PNG 300dpi kalau
+    perlu. Mengembalikan (path_gambar, None) atau (None, pesan_error)."""
+    if not _ext_ok(file_obj.filename, ALLOWED_TEMPLATE_EXT):
+        return None, f"Format {label_untuk_pesan} harus PDF, PNG, atau JPG."
+    os.makedirs(current_app.config["UPLOAD_TEMPLATE_DIR"], exist_ok=True)
+    fn = secure_filename(file_obj.filename)
+    raw_path = os.path.join(current_app.config["UPLOAD_TEMPLATE_DIR"], f"{stamp}_{fn}")
+    file_obj.save(raw_path)
+    if raw_path.lower().endswith(".pdf"):
+        try:
+            from pdf2image import convert_from_path
+            pages = convert_from_path(raw_path, dpi=300)
+            preview_path = raw_path.rsplit(".", 1)[0] + ".png"
+            pages[0].save(preview_path, "PNG")
+            return preview_path, None
+        except Exception as e:
+            return None, (
+                f"Gagal mengonversi PDF {label_untuk_pesan} ke gambar ({e}). Pastikan "
+                f"Poppler sudah terpasang, atau unggah file PNG/JPG langsung."
+            )
+    return raw_path, None
+
+
+def _template_baru_otomatis():
+    """Mode Otomatis: admin unggah 2 file (versi contoh berisi teks +
+    versi polos tanpa teks). Sistem otomatis:
+      1. Membandingkan kedua gambar (diff_detect) untuk menemukan posisi
+         tiap area teks - andal untuk font apa pun termasuk kaligrafi.
+      2. Menebak field yang cocok untuk tiap area (cocokkan_otomatis)
+         TANPA perlu admin pilih dropdown manual satu-satu.
+      3. Menerapkan hasilnya langsung ke kalibrasi template & memakai
+         versi polos sebagai gambar latar permanen.
+    Admin diarahkan ke halaman Kalibrasi yang SUDAH terisi hasil tebakan
+    ini - kalau sudah pas, tidak perlu diapa-apakan lagi; kalau ada yang
+    meleset, alat edit manual (drag/angka) sudah tersedia di halaman yang
+    sama seperti biasa."""
+    nama = request.form.get("nama_template", "").strip()
+    f_contoh = request.files.get("file_contoh")
+    f_kosong = request.files.get("file_kosong")
+
+    if not nama or not f_contoh or not f_contoh.filename or not f_kosong or not f_kosong.filename:
+        flash("Nama template, versi contoh, dan versi polos wajib diisi.", "error")
+        return redirect(url_for("admin.template_baru"))
+
+    stamp = datetime.utcnow().strftime("%Y%m%d%H%M%S")
+    path_contoh, err = _simpan_gambar_desain(f_contoh, stamp, "versi contoh")
+    if err:
+        flash(err, "error")
+        return redirect(url_for("admin.template_baru"))
+    path_kosong, err = _simpan_gambar_desain(f_kosong, f"{stamp}b", "versi polos")
+    if err:
+        flash(err, "error")
+        return redirect(url_for("admin.template_baru"))
+
+    from PIL import Image
+    with Image.open(path_kosong) as im:
+        w, h = im.size
+    if w < 2400:
+        flash(
+            f"Perhatian: lebar gambar polos hanya {w}px. Untuk hasil sertifikat yang "
+            f"tajam saat dicetak, disarankan lebar minimal ~2400px (setara 300 DPI). "
+            f"Template tetap tersimpan dan bisa dipakai.", "error"
+        )
+
+    font_paths = _simpan_font_kustom(stamp)
+
+    tpl = TemplateSertifikat(
+        nama_template=nama,
+        preview_path=path_kosong,
+        font_nama_path=font_paths.get("font_nama_path"),
+        font_bold_path=font_paths.get("font_bold_path"),
+        font_reg_path=font_paths.get("font_reg_path"),
+        font_tanggal_path=font_paths.get("font_tanggal_path"),
+        aktif=True,
+    )
+    tpl.set_field_config(DEFAULT_FIELD_CONFIG)
+    db.session.add(tpl)
+    db.session.commit()
+
+    try:
+        from app.certgen.diff_detect import deteksi_dari_dua_gambar, cocokkan_otomatis
+        kotak, diresize, ocr_tersedia = deteksi_dari_dua_gambar(path_contoh, path_kosong)
+        pemetaan, tidak_dikenali = cocokkan_otomatis(kotak)
+
+        config = tpl.get_field_config()
+        for k, v in DEFAULT_FIELD_CONFIG.items():
+            config.setdefault(k, v)
+        kotak_by_id = {k["id"]: k for k in kotak}
+        field_terupdate = _terapkan_pemetaan_ke_config(config, pemetaan, kotak_by_id)
+        tpl.set_field_config(config)
+        db.session.commit()
+
+        if not ocr_tersedia:
+            flash(
+                "Catatan: OCR (Tesseract) tidak terpasang di server ini, jadi pencocokan "
+                "field NIM/Fakultas/Universitas/Tanggal/No. Sertifikat (yang butuh membaca "
+                "kata kunci teks) kemungkinan besar tidak akurat - cuma posisi Nama yang "
+                "bisa ditebak (dari ukuran & posisi, bukan bacaan). Disarankan cek & "
+                "sesuaikan manual di bawah, atau pasang Tesseract dulu lalu unggah ulang.",
+                "error",
+            )
+        if field_terupdate:
+            pesan = f"Template '{nama}' berhasil diunggah & dikalibrasi otomatis: {', '.join(field_terupdate)}."
+            if tidak_dikenali:
+                pesan += f" {len(tidak_dikenali)} area lain tidak dikenali & diabaikan (bisa ditambahkan manual kalau perlu)."
+            pesan += " Cek pratinjau di bawah - kalau sudah pas, tidak perlu diapa-apakan lagi."
+            flash(pesan, "success")
+        else:
+            flash(
+                f"Template '{nama}' berhasil diunggah, tapi tidak ada area yang berhasil "
+                f"dikenali otomatis (kemungkinan kedua gambar terlalu mirip atau tidak ada "
+                f"perbedaan terdeteksi). Silakan atur posisi secara manual.", "error"
+            )
+        if diresize:
+            flash("Catatan: ukuran versi contoh & versi polos sedikit berbeda, salah satunya otomatis disesuaikan - hasil deteksi bisa sedikit kurang presisi.", "error")
+    except Exception as e:
+        flash(f"Template '{nama}' berhasil diunggah, tapi deteksi otomatis gagal dijalankan ({e}). Silakan atur posisi secara manual.", "error")
+
+    return redirect(url_for("admin.template_kalibrasi", template_id=tpl.id))
+
+
+def _template_baru_manual():
+    """Mode Manual (perilaku lama): 1 file desain, deteksi OCR label
+    placeholder best-effort, sisanya diatur manual di halaman kalibrasi."""
+    nama = request.form.get("nama_template", "").strip()
+    file_desain = request.files.get("file_desain")
+
+    if not nama or not file_desain or not file_desain.filename:
+        flash("Nama template dan file desain wajib diisi.", "error")
+        return redirect(url_for("admin.template_baru"))
+
+    stamp = datetime.utcnow().strftime("%Y%m%d%H%M%S")
+    preview_path, err = _simpan_gambar_desain(file_desain, stamp, "desain")
+    if err:
+        flash(err, "error")
+        return redirect(url_for("admin.template_baru"))
+
+    from PIL import Image
+    with Image.open(preview_path) as im:
+        w, h = im.size
+    if w < 2400:
+        flash(
+            f"Perhatian: lebar gambar hanya {w}px. Untuk hasil sertifikat yang "
+            f"tajam saat dicetak, disarankan unggah desain dengan lebar minimal "
+            f"~2400px (setara 300 DPI ukuran A4). Template tetap tersimpan dan "
+            f"bisa dipakai.", "error"
+        )
+
+    font_paths = _simpan_font_kustom(stamp)
 
     tpl = TemplateSertifikat(
         nama_template=nama,
@@ -595,7 +703,7 @@ def template_deteksi_diff(template_id):
 
     try:
         from app.certgen.diff_detect import deteksi_dari_dua_gambar
-        kotak, diresize = deteksi_dari_dua_gambar(path_contoh, path_kosong)
+        kotak, diresize, ocr_tersedia = deteksi_dari_dua_gambar(path_contoh, path_kosong)
     except Exception as e:
         return jsonify({"ok": False, "error": f"Deteksi gagal: {e}"}), 400
 
@@ -603,7 +711,7 @@ def template_deteksi_diff(template_id):
         return jsonify({"ok": False, "error": "Tidak ada perbedaan terdeteksi di antara kedua gambar. Pastikan versi contoh & polos memang berbeda teksnya."}), 400
 
     return jsonify({
-        "ok": True, "kotak": kotak, "diresize": diresize,
+        "ok": True, "kotak": kotak, "diresize": diresize, "ocr_tersedia": ocr_tersedia,
         "gambar_contoh_url": url_for("admin.template_deteksi_diff_temp", template_id=template_id, jenis="contoh"),
     })
 
@@ -620,40 +728,15 @@ def template_deteksi_diff_temp(template_id, jenis):
     return _send_file(path)
 
 
-@admin_bp.route("/template/<int:template_id>/deteksi-diff/terapkan", methods=["POST"])
-@admin_required
-def template_deteksi_diff_terapkan(template_id):
-    """Langkah 2: admin sudah memberi label field ke tiap kotak lewat
-    dropdown di UI. Terima pemetaan {field: [id_kotak, ...]}, lalu:
-      1. Gabungkan bounding box semua kotak yang dilabeli field yang sama
-         (kalau OCR/diff memecah satu field jadi >1 kotak, mis. label
-         "NIM :" & nilainya kepisah) jadi satu titik tengah + perkiraan
-         ukuran font dari tinggi kotak.
-      2. Update field_config template dengan posisi & ukuran baru itu.
-      3. Ganti preview_path template ke gambar VERSI POLOS yang barusan
-         diunggah (karena sudah terbukti bersih - hasil diff yang jadi
-         dasar deteksi ini) - jadi tidak perlu lagi "Bersihkan Area"
-         manual, sekaligus posisi & background beres dalam satu langkah.
-    """
-    tpl = TemplateSertifikat.query.get_or_404(template_id)
-    data = request.get_json(force=True)
-    pemetaan = data.get("pemetaan", {})   # {"nama": [0], "nim": [1], ...}
-    kotak_list = data.get("kotak", [])    # daftar kotak asli (dikirim balik dari klien)
+def _terapkan_pemetaan_ke_config(config, pemetaan, kotak_by_id):
+    """Terapkan hasil pelabelan kotak (baik manual lewat dropdown, maupun
+    otomatis lewat cocokkan_otomatis()) ke field_config template.
+    Dipakai bersama oleh alur manual (template_deteksi_diff_terapkan)
+    dan alur otomatis (template_baru_otomatis), supaya logika gabung-
+    kotak & perkiraan ukuran font tidak dobel/berisiko beda hasil.
 
-    path_kosong = _path_temp_diff(template_id, "kosong")
-    if not os.path.exists(path_kosong):
-        return jsonify({"ok": False, "error": "File sementara sudah tidak ada, silakan unggah ulang kedua gambar."}), 400
-
-    kotak_by_id = {k["id"]: k for k in kotak_list}
-    config = tpl.get_field_config()
-    # Template lama (dibuat sebelum field seperti "tanggal" ditambahkan ke
-    # sistem) belum tentu punya semua key di field_config_json tersimpannya.
-    # Isi dulu dengan bawaan supaya field APAPUN yang admin pilih di
-    # dropdown pelabelan tetap bisa diproses, bukan malah dilewati diam-diam.
-    for k, v in DEFAULT_FIELD_CONFIG.items():
-        config.setdefault(k, v)
+    Mengembalikan list nama field yang berhasil diperbarui."""
     field_terupdate = []
-
     for field, id_list in pemetaan.items():
         if field not in config or not id_list:
             continue
@@ -699,6 +782,43 @@ def template_deteksi_diff_terapkan(template_id):
                 config[field]["size"] = perkiraan_size
 
         field_terupdate.append(field)
+    return field_terupdate
+
+
+@admin_bp.route("/template/<int:template_id>/deteksi-diff/terapkan", methods=["POST"])
+@admin_required
+def template_deteksi_diff_terapkan(template_id):
+    """Langkah 2: admin sudah memberi label field ke tiap kotak lewat
+    dropdown di UI. Terima pemetaan {field: [id_kotak, ...]}, lalu:
+      1. Gabungkan bounding box semua kotak yang dilabeli field yang sama
+         (kalau OCR/diff memecah satu field jadi >1 kotak, mis. label
+         "NIM :" & nilainya kepisah) jadi satu titik tengah + perkiraan
+         ukuran font dari tinggi kotak.
+      2. Update field_config template dengan posisi & ukuran baru itu.
+      3. Ganti preview_path template ke gambar VERSI POLOS yang barusan
+         diunggah (karena sudah terbukti bersih - hasil diff yang jadi
+         dasar deteksi ini) - jadi tidak perlu lagi "Bersihkan Area"
+         manual, sekaligus posisi & background beres dalam satu langkah.
+    """
+    tpl = TemplateSertifikat.query.get_or_404(template_id)
+    data = request.get_json(force=True)
+    pemetaan = data.get("pemetaan", {})   # {"nama": [0], "nim": [1], ...}
+    kotak_list = data.get("kotak", [])    # daftar kotak asli (dikirim balik dari klien)
+
+    path_kosong = _path_temp_diff(template_id, "kosong")
+    if not os.path.exists(path_kosong):
+        return jsonify({"ok": False, "error": "File sementara sudah tidak ada, silakan unggah ulang kedua gambar."}), 400
+
+    kotak_by_id = {k["id"]: k for k in kotak_list}
+    config = tpl.get_field_config()
+    # Template lama (dibuat sebelum field seperti "tanggal" ditambahkan ke
+    # sistem) belum tentu punya semua key di field_config_json tersimpannya.
+    # Isi dulu dengan bawaan supaya field APAPUN yang admin pilih di
+    # dropdown pelabelan tetap bisa diproses, bukan malah dilewati diam-diam.
+    for k, v in DEFAULT_FIELD_CONFIG.items():
+        config.setdefault(k, v)
+
+    field_terupdate = _terapkan_pemetaan_ke_config(config, pemetaan, kotak_by_id)
 
     tpl.set_field_config(config)
 
@@ -770,3 +890,131 @@ def template_nonaktifkan(template_id):
     db.session.commit()
     flash(f"Template '{tpl.nama_template}' {'diaktifkan' if tpl.aktif else 'dinonaktifkan'}.", "success")
     return redirect(url_for("admin.template_list"))
+
+
+@admin_bp.route("/template/<int:template_id>/hapus", methods=["POST"])
+@admin_required
+def template_hapus(template_id):
+    """Hapus template beserta seluruh file terkait (gambar latar & font
+    kustom yang diunggah untuknya). Periode yang masih memakai template
+    ini template_id-nya di-set NULL dulu (bukan ikut terhapus) - supaya
+    data periode & peserta yang sudah ada tidak hilang, admin cuma perlu
+    pilih ulang template lain lewat 'Pengaturan Periode' untuk periode
+    yang terdampak."""
+    tpl = TemplateSertifikat.query.get_or_404(template_id)
+    nama = tpl.nama_template
+
+    periode_terdampak = list(tpl.periode)
+    for p in periode_terdampak:
+        p.template_id = None
+
+    # Hapus file fisik (gambar latar + font kustom) - abaikan kalau
+    # sudah tidak ada/gagal dihapus, jangan sampai proses terhenti cuma
+    # gara-gara file sudah hilang duluan. Sekaligus jaga-jaga: jangan
+    # hapus file yang ternyata MASIH dipakai template LAIN (harusnya
+    # tidak pernah terjadi di alur normal karena tiap unggah selalu
+    # dapat nama file unik berstempel waktu, tapi dicek untuk keamanan).
+    import os as _os
+    path_dipakai_lain = set()
+    for t_lain in TemplateSertifikat.query.filter(TemplateSertifikat.id != template_id).all():
+        for p in [t_lain.preview_path, t_lain.font_nama_path, t_lain.font_bold_path,
+                  t_lain.font_reg_path, t_lain.font_tanggal_path]:
+            if p:
+                path_dipakai_lain.add(p)
+
+    for path in [tpl.preview_path, tpl.font_nama_path, tpl.font_bold_path,
+                 tpl.font_reg_path, tpl.font_tanggal_path]:
+        if path and path not in path_dipakai_lain and _os.path.exists(path):
+            try:
+                _os.remove(path)
+            except OSError:
+                pass
+
+    db.session.delete(tpl)
+    db.session.commit()
+
+    pesan = f"Template '{nama}' sudah dihapus."
+    if periode_terdampak:
+        nama_periode = ", ".join(p.nama_periode for p in periode_terdampak)
+        pesan += f" {len(periode_terdampak)} periode ({nama_periode}) kehilangan template aktifnya - pilih ulang lewat Pengaturan Periode."
+    flash(pesan, "success")
+    return redirect(url_for("admin.template_list"))
+
+
+# ============================================================= arsip ==
+# Fitur backup: admin bisa lihat & unduh satu-satu file PDF sertifikat
+# peserta yang SUDAH terkirim, dikelompokkan per periode. PDF TIDAK
+# disimpan permanen di server (supaya tidak boros storage & selalu
+# konsisten kalau kalibrasi/template di-update) - digenerate ulang saat
+# itu juga tiap kali admin klik unduh, persis proses yang sama dipakai
+# saat awal dikirim ke peserta (lihat routes_public.verifikasi_otp).
+
+@admin_bp.route("/arsip")
+@admin_required
+def arsip_list():
+    """Daftar periode magang, dipakai sebagai pintu masuk arsip - klik
+    satu periode untuk lihat & unduh sertifikat peserta di dalamnya."""
+    periode_list = Periode.query.order_by(Periode.dibuat_at.desc()).all()
+    ringkasan = []
+    for p in periode_list:
+        total = len(p.peserta)
+        sudah = sum(1 for ps in p.peserta if ps.status == "terkirim")
+        ringkasan.append({"periode": p, "total": total, "sudah": sudah})
+    return render_template("admin/arsip_list.html", ringkasan=ringkasan)
+
+
+@admin_bp.route("/arsip/<int:periode_id>")
+@admin_required
+def arsip_detail(periode_id):
+    """Daftar peserta YANG SUDAH mengambil sertifikat (status=terkirim)
+    di satu periode, masing-masing dengan tombol unduh PDF satu-satu.
+    Peserta yang belum mengambil tidak punya PDF untuk diunduh (belum
+    pernah digenerate), jadi tidak ditampilkan di sini."""
+    periode = Periode.query.get_or_404(periode_id)
+    peserta_list = (
+        Peserta.query.filter_by(periode_id=periode_id, status="terkirim")
+        .order_by(Peserta.waktu_diambil.desc())
+        .all()
+    )
+    return render_template("admin/arsip_detail.html", periode=periode, peserta_list=peserta_list)
+
+
+@admin_bp.route("/arsip/peserta/<int:peserta_id>/unduh")
+@admin_required
+def arsip_unduh_satu(peserta_id):
+    """Generate ulang & unduh SATU file PDF sertifikat peserta - dipicu
+    tombol unduh di halaman arsip_detail. Sengaja generate-on-demand
+    (bukan baca file tersimpan) supaya hasilnya selalu 1:1 sama dengan
+    kalibrasi template TERKINI, dan tidak perlu simpan salinan PDF
+    permanen di server untuk tiap peserta."""
+    peserta = Peserta.query.get_or_404(peserta_id)
+    if peserta.status != "terkirim":
+        flash("Peserta ini belum mengambil sertifikat, belum ada PDF untuk diunduh.", "error")
+        return redirect(url_for("admin.arsip_detail", periode_id=peserta.periode_id))
+
+    periode = peserta.periode
+    tpl = periode.template
+    if not tpl:
+        flash("Periode ini tidak lagi punya template aktif - tidak bisa generate ulang PDF-nya.", "error")
+        return redirect(url_for("admin.arsip_detail", periode_id=peserta.periode_id))
+
+    verify_url = url_for("public.cek_sertifikat", kode=peserta.kode_verifikasi, _external=True)
+    pdf_bytes = generate_certificate_pdf_bytes(
+        preview_path=tpl.preview_path,
+        field_config=tpl.get_field_config(),
+        nama=peserta.nama, nim=peserta.nim,
+        fakultas=peserta.fakultas, universitas=peserta.universitas,
+        no_sertifikat=peserta.no_ref, kode_verifikasi=peserta.kode_verifikasi,
+        verify_url=verify_url,
+        tanggal_terbit=format_tanggal_indonesia(periode.tanggal_selesai),
+        font_nama_path=tpl.font_nama_path, font_bold_path=tpl.font_bold_path, font_reg_path=tpl.font_reg_path,
+        font_tanggal_path=tpl.font_tanggal_path,
+    )
+
+    from io import BytesIO
+    nama_file_aman = "".join(c for c in peserta.nama if c.isalnum() or c in " _-").strip().replace(" ", "_")
+    nama_file = f"Sertifikat_{nama_file_aman}_{peserta.nim}.pdf"
+    return send_file(
+        BytesIO(pdf_bytes), mimetype="application/pdf",
+        as_attachment=True, download_name=nama_file,
+    )

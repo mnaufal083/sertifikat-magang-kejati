@@ -7,6 +7,7 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='css/tailwind.css') }}">
   <script src="{{ url_for('static', filename='js/alpine.min.js') }}" defer></script>
   <style>[x-cloak]{display:none!important}</style>
+  {% block head_extra %}{% endblock %}
 </head>
 <body class="bg-stone-100 min-h-screen">
   {% block body %}{% endblock %}

@@ -41,10 +41,20 @@
       <h2 class="text-sm font-bold text-stone-800 mb-1">Deteksi dari 2 Gambar</h2>
       <p class="text-xs text-stone-500 mb-4">
         Unggah 2 versi desain yang <strong>identik persis</strong> kecuali
-        teksnya: satu dengan teks contoh terisi di semua field, satu lagi
-        sudah dihapus semua teksnya (polos). Sistem mencari bagian yang
-        berbeda secara otomatis — bekerja untuk font apa pun, termasuk kaligrafi.
+        teksnya: satu dengan teks contoh terisi di field yang beda-beda per
+        peserta, satu lagi sudah dihapus HANYA bagian itu saja (polos).
+        Sistem mencari bagian yang berbeda secara otomatis — bekerja untuk
+        font apa pun, termasuk kaligrafi.
       </p>
+      <div class="mb-4 rounded-lg bg-amber-50 border border-amber-200 px-3 py-2.5 text-xs text-amber-800">
+        <strong>Penting:</strong> di versi polos, HANYA hapus area yang
+        memang berubah tiap peserta: Nama, NIM, Fakultas, Universitas,
+        tanggal terbit, No. Sertifikat. <strong>Jangan hapus</strong> judul
+        ("SERTIFIKAT"), kalimat sambutan, paragraf baku, atau nama/jabatan
+        penandatangan — itu semua harus tetap ada di KEDUA versi karena
+        memang tidak pernah berubah. Kalau ikut terhapus, sistem akan
+        salah kira itu semua field yang perlu diisi juga.
+      </div>
       <div class="space-y-3 mb-4">
         <div>
           <label class="block text-xs font-medium text-stone-600 mb-1">Versi dengan teks contoh</label>
@@ -80,6 +90,18 @@
         tiap kotak bernomor (tebakan OCR ditampilkan sebagai petunjuk kalau berhasil terbaca).
         Kotak yang dibiarkan "— Abaikan —" tidak diterapkan.
       </p>
+      <div x-show="!ocrTersedia" x-cloak class="mb-4 rounded-lg bg-amber-50 border border-amber-200 px-3 py-2.5 text-xs text-amber-800">
+        <strong>OCR (Tesseract) tidak terpasang</strong> di komputer/server ini, jadi kolom
+        "Tebakan" di bawah semuanya kosong untuk SEMUA kotak — bukan berarti semuanya
+        kaligrafi. Beri label manual satu-satu sesuai posisi kotaknya di gambar.
+      </div>
+      <div x-show="banyakKotak" x-cloak class="mb-4 rounded-lg bg-rose-50 border border-rose-200 px-3 py-2.5 text-xs text-rose-700">
+        Terdeteksi cukup banyak kotak (<span x-text="kotak.length"></span>). Kalau sebagian
+        di antaranya adalah judul/kalimat baku/nama penandatangan yang seharusnya TIDAK
+        pernah berubah, kemungkinan itu ikut terhapus di versi polos yang diunggah - cek
+        lagi filenya, seharusnya cuma area Nama/NIM/Fakultas/Universitas/Tanggal/No.
+        Sertifikat saja yang kosong.
+      </div>
 
       <div class="relative border border-stone-200 rounded-lg overflow-hidden mb-4">
         <img :src="gambarContohUrl" class="w-full block">
@@ -100,7 +122,7 @@
             <span class="w-6 h-6 shrink-0 rounded-full text-white text-xs font-bold flex items-center justify-center"
                   :class="k.field ? 'bg-emerald-600' : 'bg-brand-600'" x-text="k.id + 1"></span>
             <span class="flex-1 text-stone-500 text-xs truncate"
-                  x-text="k.tebakan ? ('Tebakan: \'' + k.tebakan + '\'') : '(tidak terbaca — wajar untuk font kaligrafi, pilih manual)'"></span>
+                  x-text="k.tebakan ? ('Tebakan: \'' + k.tebakan + '\'') : (ocrTersedia ? '(tidak terbaca — mungkin kaligrafi, atau OCR salah baca; pilih manual)' : '(OCR tidak tersedia — pilih manual)')"></span>
             <select x-model="k.field" class="text-xs border border-stone-300 rounded-md px-2 py-1.5 shrink-0">
               <option value="">— Abaikan —</option>
               <option value="nama">Nama</option>
@@ -754,6 +776,11 @@ function deteksiDiff() {
     gambarContohUrl: "",
     menerapkan: false,
     errorTerapkan: "",
+    ocrTersedia: true,
+
+    get banyakKotak() {
+      return this.kotak.length >= 8;
+    },
 
     async jalankanDeteksi() {
       this.loading = true;
@@ -769,6 +796,7 @@ function deteksiDiff() {
         if (!json.ok) throw new Error(json.error || "Deteksi gagal.");
         this.kotak = json.kotak.map((k) => ({ ...k, field: "" }));
         this.gambarContohUrl = json.gambar_contoh_url + "?t=" + Date.now();
+        this.ocrTersedia = json.ocr_tersedia !== false;
         this.modalUpload = false;
         this.modalLabel = true;
       } catch (e) {

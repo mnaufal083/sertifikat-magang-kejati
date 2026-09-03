@@ -30,6 +30,12 @@
             {{ 'Nonaktifkan' if t.aktif else 'Aktifkan' }}
           </button>
         </form>
+        <form method="post" action="{{ url_for('admin.template_hapus', template_id=t.id) }}">
+          <button type="submit" class="text-xs text-stone-400 hover:text-rose-600 underline"
+                  onclick="return confirm('Hapus template &quot;{{ t.nama_template }}&quot;? Tindakan ini tidak bisa dibatalkan.{% if t.periode %} {{ t.periode|length }} periode magang sedang memakai template ini dan akan otomatis kehilangan template aktifnya (perlu dipilih ulang manual).{% endif %}')">
+            Hapus
+          </button>
+        </form>
       </div>
     </div>
   </div>

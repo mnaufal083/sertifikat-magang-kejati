@@ -1,20 +1,99 @@
 {% extends "public/base_public.html" %}
 {% block title %}Beranda{% endblock %}
 {% block body %}
-<div class="min-h-screen flex items-center justify-center px-4">
-  <div class="max-w-md w-full bg-white rounded-2xl shadow-sm border border-stone-200 p-8 text-center">
-    <div class="text-3xl mb-3">⚖</div>
-    <h1 class="text-xl font-bold text-stone-800 mb-2">Sertifikat Magang</h1>
-    <p class="text-sm text-stone-500 mb-6">Kejaksaan Tinggi Jawa Tengah</p>
-    <a href="{{ url_for('public.ambil_sertifikat') }}"
-       class="block w-full bg-brand-600 hover:bg-brand-700 text-white font-medium py-3 rounded-lg transition mb-3">
-      Ambil Sertifikat Magang
-    </a>
-    <a href="{{ url_for('public.cek_sertifikat') }}"
-       class="block w-full text-brand-600 text-sm hover:underline py-2">
-      Cek Keaslian Sertifikat
-    </a>
-    <a href="{{ url_for('admin.login') }}" class="block text-xs text-stone-400 hover:underline mt-4">Masuk sebagai admin</a>
-  </div>
+<div class="min-h-screen bg-[#F7F2E7] text-[#2B2116] flex flex-col">
+
+  <!-- Header: identitas institusi, tanpa navigasi berat -->
+  <header class="px-6 md:px-12 py-6 md:py-8 flex items-center gap-3">
+    <div class="w-10 h-10 rounded-full border border-[#B08D3E]/50 flex items-center justify-center shrink-0">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#2e1440" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" class="w-5 h-5">
+        <path d="M12 3v18M6 8l-3 5a3 3 0 0 0 6 0l-3-5zM18 8l-3 5a3 3 0 0 0 6 0l-3-5zM5 21h14M6 8h12M9 5h6"/>
+      </svg>
+    </div>
+    <div class="leading-tight">
+      <div class="font-semibold text-sm text-[#2e1440]">Kejaksaan Tinggi</div>
+      <div class="text-xs text-[#8a7a5c]">Jawa Tengah</div>
+    </div>
+  </header>
+
+  <!-- Hero -->
+  <main class="flex-1 px-6 md:px-12 max-w-6xl mx-auto w-full">
+    <div class="grid md:grid-cols-2 gap-10 md:gap-16 items-center py-8 md:py-16">
+      <div>
+        <h1 class="font-serif text-4xl md:text-[3.25rem] leading-[1.08] tracking-tight text-[#2e1440] mb-5">
+          Sertifikat magang Anda, siap diambil.
+        </h1>
+        <p class="text-[#5c5240] text-base md:text-lg leading-relaxed mb-8 max-w-md">
+          Sertifikat resmi peserta magang di Lingkungan Kejaksaan Tinggi Jawa Tengah
+          diterbitkan otomatis oleh sistem, begitu identitas Anda terverifikasi lewat email.
+        </p>
+        <div class="flex flex-col sm:flex-row gap-3">
+          <a href="{{ url_for('public.ambil_sertifikat') }}"
+             class="inline-flex items-center justify-center gap-2 bg-[#2e1440] hover:bg-[#4a2269] text-white font-medium px-6 py-3.5 rounded-lg transition">
+            Ambil Sertifikat
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-4 h-4"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+          </a>
+          <a href="{{ url_for('public.cek_sertifikat') }}"
+             class="inline-flex items-center justify-center gap-2 border border-[#2e1440]/25 hover:border-[#2e1440]/50 text-[#2e1440] font-medium px-6 py-3.5 rounded-lg transition">
+            Cek Keaslian Sertifikat
+          </a>
+        </div>
+        <p class="text-xs text-[#8a7a5c] mt-4">
+          Pihak lain (mis. HRD tempat Anda melamar kerja) juga bisa memverifikasi
+          keaslian sertifikat lewat tautan yang sama, cukup dengan kode di sertifikat atau hasil pindai QR.
+        </p>
+      </div>
+
+      <!-- Motif ornamental: timbangan keadilan dalam bingkai medali, senada dengan sertifikat asli -->
+      <div class="hidden md:flex justify-center" aria-hidden="true">
+        <svg viewBox="0 0 360 360" class="w-full max-w-sm">
+          <circle cx="180" cy="180" r="150" fill="none" stroke="#2e1440" stroke-width="1"/>
+          <circle cx="180" cy="180" r="132" fill="none" stroke="#B08D3E" stroke-width="1" stroke-dasharray="1 7" stroke-linecap="round"/>
+          <g stroke="#2e1440" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" fill="none">
+            <path d="M180 90v170M120 130l-28 46a26 26 0 0 0 56 0l-28-46zM240 130l-28 46a26 26 0 0 0 56 0l-28-46zM130 268h100M120 130h120M155 106h50"/>
+          </g>
+          <g stroke="#3F5B3E" stroke-width="1.2">
+            <path d="M180 30v18M180 312v18M30 180h18M312 180h18" stroke-linecap="round"/>
+          </g>
+          <g fill="#B08D3E">
+            <circle cx="180" cy="48" r="2.5"/><circle cx="180" cy="312" r="2.5"/>
+            <circle cx="48" cy="180" r="2.5"/><circle cx="312" cy="180" r="2.5"/>
+          </g>
+        </svg>
+      </div>
+    </div>
+  </main>
+
+  <!-- Bagaimana prosesnya: urutan asli, jadi wajar dipakai penomoran -->
+  <section class="border-t border-[#2e1440]/10 px-6 md:px-12 py-12 md:py-16">
+    <div class="max-w-6xl mx-auto">
+      <h2 class="font-serif text-2xl text-[#2e1440] mb-8">Bagaimana prosesnya</h2>
+      <div class="grid sm:grid-cols-3 gap-8 md:gap-12">
+        <div class="border-t-2 border-[#2e1440] pt-4">
+          <div class="text-xs text-[#B08D3E] font-medium mb-1.5">Langkah 1</div>
+          <div class="font-medium text-[#2e1440] mb-1.5">Isi data diri</div>
+          <p class="text-sm text-[#5c5240] leading-relaxed">Masukkan nama, NIM, dan email sesuai yang terdaftar saat pendaftaran magang.</p>
+        </div>
+        <div class="border-t-2 border-[#2e1440] pt-4">
+          <div class="text-xs text-[#B08D3E] font-medium mb-1.5">Langkah 2</div>
+          <div class="font-medium text-[#2e1440] mb-1.5">Verifikasi lewat email</div>
+          <p class="text-sm text-[#5c5240] leading-relaxed">Kode OTP 6 digit dikirim ke email Anda untuk memastikan sertifikat sampai ke pemiliknya.</p>
+        </div>
+        <div class="border-t-2 border-[#2e1440] pt-4">
+          <div class="text-xs text-[#B08D3E] font-medium mb-1.5">Langkah 3</div>
+          <div class="font-medium text-[#2e1440] mb-1.5">Sertifikat terkirim</div>
+          <p class="text-sm text-[#5c5240] leading-relaxed">File PDF resmi, lengkap dengan QR verifikasi, langsung dikirim ke email yang sama.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Footer: kontak instansi + akses admin disamarkan (bukan disembunyikan) -->
+  <footer class="mt-auto border-t border-[#2e1440]/10 px-6 md:px-12 py-6">
+    <div class="max-w-6xl mx-auto flex flex-col sm:flex-row justify-between items-center gap-3 text-xs text-[#8a7a5c]">
+      <div>© {{ tahun_sekarang }} Kejaksaan Tinggi Jawa Tengah — Bidang Pembinaan</div>
+      <a href="{{ url_for('admin.login') }}" class="hover:text-[#2e1440] transition">Admin</a>
+    </div>
+  </footer>
 </div>
 {% endblock %}
